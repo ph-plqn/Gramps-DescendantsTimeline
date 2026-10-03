@@ -5,6 +5,9 @@ from __future__ import annotations
 from descendants_timeline.layout.marriage_node_placement import (
     MarriageNodePlacement,
 )
+from descendants_timeline.layout.remarriage_segment_placement import (
+    RemarriageSegmentPlacement,
+)
 from descendants_timeline.layout.person_placement import PersonPlacement
 from descendants_timeline.layout.timeline_layout import TimelineLayout
 from descendants_timeline.timeline.timeline_model import TimelineModel
@@ -70,10 +73,26 @@ class LayoutEngine:
                 )
             )
 
+        remarriage_segment_placements = []
+        married_person_ids = set()
+        for marriage in marriage_node_placements:
+            person_id = marriage.descendant_person_id
+            if person_id in married_person_ids:
+                person_y = person_placements[marriage.descendant_row_index].y
+                remarriage_segment_placements.append(
+                    RemarriageSegmentPlacement(
+                        person_id=person_id,
+                        x=marriage.x,
+                        y_start=min(person_y, marriage.y),
+                        y_end=max(person_y, marriage.y),
+                    )
+                )
+            married_person_ids.add(person_id)
+
         return TimelineLayout(
             person_placements=person_placements,
             marriage_node_placements=tuple(marriage_node_placements),
-            remarriage_segment_placements=(),
+            remarriage_segment_placements=tuple(remarriage_segment_placements),
         )
 
     def _build_person_placement(
