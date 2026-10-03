@@ -910,5 +910,170 @@ class LayoutEngineTests(unittest.TestCase):
         self.assertEqual(segment.y_start, 20.0)
         self.assertEqual(segment.y_end, 50.0)
 
+    def test_three_marriages_create_two_remarriage_segments(self) -> None:
+        descendant = Person(
+            person_id="I1",
+            display_name="Descendant",
+            gender=PersonGender.UNKNOWN,
+            event_refs=(),
+            parent_family_ids=(),
+            family_ids=("F1", "F2", "F3"),
+        )
+        first_spouse = Person(
+            person_id="I2",
+            display_name="First spouse",
+            gender=PersonGender.UNKNOWN,
+            event_refs=(),
+            parent_family_ids=(),
+            family_ids=("F1",),
+        )
+        second_spouse = Person(
+            person_id="I3",
+            display_name="Second spouse",
+            gender=PersonGender.UNKNOWN,
+            event_refs=(),
+            parent_family_ids=(),
+            family_ids=("F2",),
+        )
+        third_spouse = Person(
+            person_id="I4",
+            display_name="Third spouse",
+            gender=PersonGender.UNKNOWN,
+            event_refs=(),
+            parent_family_ids=(),
+            family_ids=("F3",),
+        )
+        events = {}
+        families = {}
+        for family_id, spouse_id, event_id, year in (
+            ("F1", "I2", "E1", 1870),
+            ("F2", "I3", "E2", 1890),
+            ("F3", "I4", "E3", 1910),
+        ):
+            events[event_id] = Event(
+                event_id=event_id,
+                source_type="MARRIAGE",
+                semantic=EventSemantic.MARRIAGE,
+                date=TemporalValue(
+                    source_value=f"01/01/{year}",
+                    source_calendar="GREGORIAN",
+                    normalized_minimum=date(year, 1, 1),
+                    normalized_maximum=date(year, 1, 1),
+                    representative_value=date(year, 1, 1),
+                    value_origin=ValueOrigin.GRAMPS,
+                    source_quality=SourceQuality.NORMAL,
+                    evidence_status=EvidenceStatus.EVIDENCE_USABLE,
+                    certainty=CertaintyLevel.CERTAIN,
+                ),
+            )
+            families[family_id] = Family(
+                family_id=family_id,
+                parent1_id="I1",
+                parent2_id=spouse_id,
+                event_refs=(
+                    FamilyEventRef(
+                        event_id=event_id,
+                        semantic_role=FamilyRoleSemantic.FAMILY,
+                        source_role="FAMILY",
+                    ),
+                ),
+                child_refs=(),
+            )
+        data = RawGenealogyData(
+            persons={
+                "I1": descendant,
+                "I2": first_spouse,
+                "I3": second_spouse,
+                "I4": third_spouse,
+            },
+            families=families,
+            events=events,
+            root_person_id="I1",
+        )
+        traversal = TraversalResult(
+            root_person_id="I1",
+            rows=(
+                TraversalRow(
+                    person_id="I1",
+                    generation=1,
+                    role=TraversalRole.DESCENDANT,
+                    family_id=None,
+                    spouse_of_person_id=None,
+                ),
+                TraversalRow(
+                    person_id="I2",
+                    generation=1,
+                    role=TraversalRole.SPOUSE,
+                    family_id="F1",
+                    spouse_of_person_id="I1",
+                ),
+                TraversalRow(
+                    person_id="I3",
+                    generation=1,
+                    role=TraversalRole.SPOUSE,
+                    family_id="F2",
+                    spouse_of_person_id="I1",
+                ),
+                TraversalRow(
+                    person_id="I4",
+                    generation=1,
+                    role=TraversalRole.SPOUSE,
+                    family_id="F3",
+                    spouse_of_person_id="I1",
+                ),
+            ),
+            family_occurrences=(
+                TraversalFamilyOccurrence(
+                    family_id="F1",
+                    descendant_person_id="I1",
+                    descendant_row_index=0,
+                    spouse_person_id="I2",
+                    spouse_row_index=1,
+                    state=FamilyTraversalState.EXPLORED,
+                    referenced_row_index=None,
+                ),
+                TraversalFamilyOccurrence(
+                    family_id="F2",
+                    descendant_person_id="I1",
+                    descendant_row_index=0,
+                    spouse_person_id="I3",
+                    spouse_row_index=2,
+                    state=FamilyTraversalState.EXPLORED,
+                    referenced_row_index=None,
+                ),
+                TraversalFamilyOccurrence(
+                    family_id="F3",
+                    descendant_person_id="I1",
+                    descendant_row_index=0,
+                    spouse_person_id="I4",
+                    spouse_row_index=3,
+                    state=FamilyTraversalState.EXPLORED,
+                    referenced_row_index=None,
+                ),
+            ),
+        )
+        temporal_results = TemporalInferenceEngine().run(data)
+        model = TimelineModelBuilder().build(
+            data=data,
+            traversal=traversal,
+            temporal_results=temporal_results,
+        )
+
+        layout = LayoutEngine().build(model)
+
+        self.assertEqual(len(layout.marriage_node_placements), 3)
+        self.assertEqual(len(layout.remarriage_segment_placements), 2)
+
+        first_segment, second_segment = layout.remarriage_segment_placements
+        self.assertEqual(first_segment.person_id, "I1")
+        self.assertEqual(first_segment.x, float(date(1890, 1, 1).toordinal()))
+        self.assertEqual(first_segment.y_start, 20.0)
+        self.assertEqual(first_segment.y_end, 50.0)
+
+        self.assertEqual(second_segment.person_id, "I1")
+        self.assertEqual(second_segment.x, float(date(1910, 1, 1).toordinal()))
+        self.assertEqual(second_segment.y_start, 20.0)
+        self.assertEqual(second_segment.y_end, 65.0)
+
 if __name__ == "__main__":
     unittest.main()
