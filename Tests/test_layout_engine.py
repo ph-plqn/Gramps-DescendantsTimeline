@@ -36,6 +36,16 @@ from descendants_timeline.model.temporal import (
 from descendants_timeline.timeline.timeline_model_builder import (
     TimelineModelBuilder,
 )
+from descendants_timeline.model.family import Family
+from descendants_timeline.model.family_event_ref import (
+    FamilyEventRef,
+    FamilyRoleSemantic,
+)
+from descendants_timeline.traversal.descendance_traversal import (
+    FamilyTraversalState,
+    TraversalFamilyOccurrence,
+)
+
 class LayoutEngineTests(unittest.TestCase):
     def test_root_produces_one_person_placement(self) -> None:
         root = Person(
@@ -476,5 +486,108 @@ class LayoutEngineTests(unittest.TestCase):
             placement.x_start,
             placement.x_end,
         )
+
+    def test_marriage_representative_value_creates_marriage_node(self) -> None:
+        marriage = Event(
+            event_id="E1",
+            source_type="MARRIAGE",
+            semantic=EventSemantic.MARRIAGE,
+            date=TemporalValue(
+                source_value="01/01/1870",
+                source_calendar="GREGORIAN",
+                normalized_minimum=date(1870, 1, 1),
+                normalized_maximum=date(1870, 1, 1),
+                representative_value=date(1870, 1, 1),
+                value_origin=ValueOrigin.GRAMPS,
+                source_quality=SourceQuality.NORMAL,
+                evidence_status=EvidenceStatus.EVIDENCE_USABLE,
+                certainty=CertaintyLevel.CERTAIN,
+            ),
+        )
+
+        descendant = Person(
+            person_id="I1",
+            display_name="Descendant",
+            gender=PersonGender.UNKNOWN,
+            event_refs=(),
+            parent_family_ids=(),
+            family_ids=("F1",),
+        )
+        spouse = Person(
+            person_id="I2",
+            display_name="Spouse",
+            gender=PersonGender.UNKNOWN,
+            event_refs=(),
+            parent_family_ids=(),
+            family_ids=("F1",),
+        )
+        family = Family(
+            family_id="F1",
+            parent1_id="I1",
+            parent2_id="I2",
+            event_refs=(
+                FamilyEventRef(
+                    event_id="E1",
+                    semantic_role=FamilyRoleSemantic.FAMILY,
+                    source_role="FAMILY",
+                ),
+            ),
+            child_refs=(),
+        )
+        data = RawGenealogyData(
+            persons={"I1": descendant, "I2": spouse},
+            families={"F1": family},
+            events={"E1": marriage},
+            root_person_id="I1",
+        )
+        traversal = TraversalResult(
+            root_person_id="I1",
+            rows=(
+                TraversalRow(
+                    person_id="I1",
+                    generation=1,
+                    role=TraversalRole.DESCENDANT,
+                    family_id=None,
+                    spouse_of_person_id=None,
+                ),
+                TraversalRow(
+                    person_id="I2",
+                    generation=1,
+                    role=TraversalRole.SPOUSE,
+                    family_id="F1",
+                    spouse_of_person_id="I1",
+                ),
+            ),
+            family_occurrences=(
+                TraversalFamilyOccurrence(
+                    family_id="F1",
+                    descendant_person_id="I1",
+                    descendant_row_index=0,
+                    spouse_person_id="I2",
+                    spouse_row_index=1,
+                    state=FamilyTraversalState.EXPLORED,
+                    referenced_row_index=None,
+                ),
+            ),
+        )
+        temporal_results = TemporalInferenceEngine().run(data)
+        model = TimelineModelBuilder().build(
+            data=data,
+            traversal=traversal,
+            temporal_results=temporal_results,
+        )
+
+        layout = LayoutEngine().build(model)
+
+        self.assertEqual(len(layout.marriage_node_placements), 1)
+        placement = layout.marriage_node_placements[0]
+        self.assertEqual(placement.family_id, "F1")
+        self.assertEqual(placement.descendant_person_id, "I1")
+        self.assertEqual(placement.spouse_person_id, "I2")
+        self.assertEqual(placement.descendant_row_index, 0)
+        self.assertEqual(placement.spouse_row_index, 1)
+        self.assertEqual(placement.x, float(date(1870, 1, 1).toordinal()))
+        self.assertEqual(placement.y, 35.0)
+
 if __name__ == "__main__":
     unittest.main()
