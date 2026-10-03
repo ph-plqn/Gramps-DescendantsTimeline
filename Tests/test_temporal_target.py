@@ -111,6 +111,24 @@ class TestTemporalTarget(unittest.TestCase):
                 owner_id="I_VICTOR",
                 semantic=TargetSemantic.MARRIAGE,
             )
+    def test_family_divorce_target_is_valid(self):
+        target = TemporalTarget(
+            owner_type=TemporalOwnerType.FAMILY,
+            owner_id="F0001",
+            semantic=TargetSemantic.DIVORCE,
+        )
+
+        self.assertEqual(target.owner_id, "F0001")
+        self.assertEqual(target.semantic, TargetSemantic.DIVORCE)
+
+
+    def test_person_divorce_target_is_invalid(self):
+        with self.assertRaises(ValueError):
+            TemporalTarget(
+                owner_type=TemporalOwnerType.PERSON,
+                owner_id="I0001",
+                semantic=TargetSemantic.DIVORCE,
+            )
 
 
 if __name__ == "__main__":

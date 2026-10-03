@@ -34,6 +34,9 @@ from descendants_timeline.model.temporal_evidence import (
 from descendants_timeline.inference.birth_before_death_rule import (
     BirthBeforeDeathRule,
 )
+from descendants_timeline.inference.birth_maximum_lifespan_from_death_rule import (
+    BirthMaximumLifespanFromDeathRule,
+)
 
 class ConstraintRule(Rule):
     rule_id = "TEST_CONSTRAINT"
@@ -560,4 +563,83 @@ class RuleEngineTests(unittest.TestCase):
         self.assertEqual(
             constraint.evidences,
             (birth_evidence,),
+        )
+    def test_integration_hard_and_soft_rules_for_birth_from_death(self):
+        death_date = TemporalValue(
+            source_value="17/08/1872-19/08/1872",
+            source_calendar="GREGORIAN",
+            normalized_minimum=date(1872, 8, 17),
+            normalized_maximum=date(1872, 8, 19),
+            representative_value=None,
+            value_origin=ValueOrigin.GRAMPS,
+            source_quality=SourceQuality.NORMAL,
+            evidence_status=EvidenceStatus.EVIDENCE_USABLE,
+            certainty=CertaintyLevel.CERTAIN,
+        )
+
+        death_evidence = TemporalEvidence(
+            owner_type=EvidenceOwnerType.PERSON,
+            owner_id="I001",
+            event_id="E001",
+            semantic=EventSemantic.DEATH,
+            role=EventRoleSemantic.PRINCIPAL,
+            date=death_date,
+            principal_owner_type=TemporalOwnerType.PERSON,
+            principal_owner_id="I001",
+        )
+
+        context = RuleContext(
+            data=self.context.data,
+            evidences=(death_evidence,),
+        )
+
+        engine = RuleEngine(
+            rules=(
+                BirthBeforeDeathRule(),
+                BirthMaximumLifespanFromDeathRule(),
+            ),
+        )
+
+        constraints = engine.evaluate(
+            self.target,
+            context,
+        )
+
+        self.assertEqual(len(constraints), 2)
+
+        hard_constraint = constraints[0]
+        soft_constraint = constraints[1]
+
+        self.assertEqual(
+            hard_constraint.rule_id,
+            "BIRTH_BEFORE_DEATH",
+        )
+        self.assertIs(
+            hard_constraint.strength,
+            ConstraintStrength.HARD,
+        )
+        self.assertIs(
+            hard_constraint.operator,
+            ConstraintOperator.BEFORE_OR_EQUAL,
+        )
+        self.assertEqual(
+            hard_constraint.bound,
+            date(1872, 8, 19),
+        )
+
+        self.assertEqual(
+            soft_constraint.rule_id,
+            "BIRTH_MAXIMUM_LIFESPAN_FROM_DEATH",
+        )
+        self.assertIs(
+            soft_constraint.strength,
+            ConstraintStrength.SOFT,
+        )
+        self.assertIs(
+            soft_constraint.operator,
+            ConstraintOperator.AFTER_OR_EQUAL,
+        )
+        self.assertEqual(
+            soft_constraint.bound,
+            date(1747, 8, 17),
         )

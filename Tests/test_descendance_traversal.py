@@ -363,6 +363,215 @@ class DescendanceTraversalTests(unittest.TestCase):
         self.assertIsNone(result.family_occurrences[0].spouse_person_id)
         self.assertIsNone(result.family_occurrences[0].spouse_row_index)
 
+    def test_root_without_family_produces_single_root_row(self) -> None:
+        people = {
+            "I1": person("I1"),
+        }
+
+        data = RawGenealogyData(
+            people,
+            {},
+            {},
+            "I1",
+        )
+
+        result = DescendanceTraversal().traverse(
+            data,
+            "I1",
+        )
+
+        self.assertEqual(result.root_person_id, "I1")
+        self.assertEqual(len(result.rows), 1)
+
+        root_row = result.rows[0]
+
+        self.assertEqual(root_row.person_id, "I1")
+        self.assertEqual(root_row.generation, 1)
+        self.assertIs(root_row.role, TraversalRole.ROOT)
+        self.assertIsNone(root_row.family_id)
+        self.assertIsNone(root_row.spouse_of_person_id)
+
+        self.assertEqual(result.family_occurrences, ())
+
+    def test_multiple_families_preserve_person_family_order(self) -> None:
+        people = {
+            "I1": person("I1", ("F2", "F1")),
+            "I2": person("I2", ("F1",)),
+            "I3": person("I3", ("F2",)),
+            "C1": person("C1", parent_family_ids=("F1",)),
+            "C2": person("C2", parent_family_ids=("F2",)),
+        }
+
+        families = {
+            "F1": family(
+                "F1",
+                "I1",
+                "I2",
+                (
+                    ChildRef(
+                        "C1",
+                        ChildRelation.BIRTH,
+                        ChildRelation.BIRTH,
+                    ),
+                ),
+            ),
+            "F2": family(
+                "F2",
+                "I1",
+                "I3",
+                (
+                    ChildRef(
+                        "C2",
+                        ChildRelation.BIRTH,
+                        ChildRelation.BIRTH,
+                    ),
+                ),
+            ),
+        }
+
+        data = RawGenealogyData(
+            people,
+            families,
+            {},
+            "I1",
+        )
+
+        result = DescendanceTraversal().traverse(
+            data,
+            "I1",
+        )
+
+        self.assertEqual(
+            [
+                occurrence.family_id
+                for occurrence in result.family_occurrences
+                if occurrence.descendant_person_id == "I1"
+            ],
+            ["F2", "F1"],
+        )
+
+        self.assertEqual(
+            [row.person_id for row in result.rows],
+            ["I1", "I3", "C2", "I2", "C1"],
+        )
+
+    def test_dfs_completes_first_child_branch_before_next_sibling(self) -> None:
+        people = {
+            "I1": person("I1", ("F1",)),
+            "I2": person("I2", ("F1",)),
+            "I3": person("I3", ("F2",), ("F1",)),
+            "I4": person("I4", parent_family_ids=("F1",)),
+            "I5": person("I5", ("F2",)),
+            "I6": person("I6", parent_family_ids=("F2",)),
+        }
+
+        families = {
+            "F1": family(
+                "F1",
+                "I1",
+                "I2",
+                (
+                    ChildRef(
+                        "I3",
+                        ChildRelation.BIRTH,
+                        ChildRelation.BIRTH,
+                    ),
+                    ChildRef(
+                        "I4",
+                        ChildRelation.BIRTH,
+                        ChildRelation.BIRTH,
+                    ),
+                ),
+            ),
+            "F2": family(
+                "F2",
+                "I3",
+                "I5",
+                (
+                    ChildRef(
+                        "I6",
+                        ChildRelation.BIRTH,
+                        ChildRelation.BIRTH,
+                    ),
+                ),
+            ),
+        }
+
+        data = RawGenealogyData(
+            people,
+            families,
+            {},
+            "I1",
+        )
+
+        result = DescendanceTraversal().traverse(
+            data,
+            "I1",
+        )
+
+        self.assertEqual(
+            [row.person_id for row in result.rows],
+            ["I1", "I2", "I3", "I5", "I6", "I4"],
+        )
+
+    def test_generation_increases_with_descendant_depth(self) -> None:
+        people = {
+            "I1": person("I1", ("F1",)),
+            "I2": person("I2", ("F1",)),
+            "I3": person("I3", ("F2",), ("F1",)),
+            "I4": person("I4", ("F2",)),
+            "I5": person("I5", parent_family_ids=("F2",)),
+        }
+
+        families = {
+            "F1": family(
+                "F1",
+                "I1",
+                "I2",
+                (
+                    ChildRef(
+                        "I3",
+                        ChildRelation.BIRTH,
+                        ChildRelation.BIRTH,
+                    ),
+                ),
+            ),
+            "F2": family(
+                "F2",
+                "I3",
+                "I4",
+                (
+                    ChildRef(
+                        "I5",
+                        ChildRelation.BIRTH,
+                        ChildRelation.BIRTH,
+                    ),
+                ),
+            ),
+        }
+
+        data = RawGenealogyData(
+            people,
+            families,
+            {},
+            "I1",
+        )
+
+        result = DescendanceTraversal().traverse(
+            data,
+            "I1",
+        )
+
+        generations = {
+            row.person_id: row.generation
+            for row in result.rows
+        }
+
+        self.assertEqual(generations["I1"], 1)
+        self.assertEqual(generations["I2"], 1)
+        self.assertEqual(generations["I3"], 2)
+        self.assertEqual(generations["I4"], 2)
+        self.assertEqual(generations["I5"], 3)
 
 if __name__ == "__main__":
     unittest.main()
