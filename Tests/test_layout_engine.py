@@ -660,5 +660,114 @@ class LayoutEngineTests(unittest.TestCase):
 
         self.assertEqual(layout.marriage_node_placements, ())
 
+    def test_marriage_without_representative_value_creates_no_marriage_node(self) -> None:
+        from descendants_timeline.model.temporal_target import (
+            TargetSemantic,
+            TemporalOwnerType,
+            TemporalTarget,
+        )
+
+        marriage = Event(
+            event_id="E1",
+            source_type="MARRIAGE",
+            semantic=EventSemantic.MARRIAGE,
+            date=TemporalValue(
+                source_value="entre 1870 et 1872",
+                source_calendar="GREGORIAN",
+                normalized_minimum=date(1870, 1, 1),
+                normalized_maximum=date(1872, 12, 31),
+                representative_value=None,
+                value_origin=ValueOrigin.GRAMPS,
+                source_quality=SourceQuality.NORMAL,
+                evidence_status=EvidenceStatus.EVIDENCE_USABLE,
+                certainty=CertaintyLevel.UNDETERMINED,
+            ),
+        )
+
+        descendant = Person(
+            person_id="I1",
+            display_name="Descendant",
+            gender=PersonGender.UNKNOWN,
+            event_refs=(),
+            parent_family_ids=(),
+            family_ids=("F1",),
+        )
+        spouse = Person(
+            person_id="I2",
+            display_name="Spouse",
+            gender=PersonGender.UNKNOWN,
+            event_refs=(),
+            parent_family_ids=(),
+            family_ids=("F1",),
+        )
+        family = Family(
+            family_id="F1",
+            parent1_id="I1",
+            parent2_id="I2",
+            event_refs=(
+                FamilyEventRef(
+                    event_id="E1",
+                    semantic_role=FamilyRoleSemantic.FAMILY,
+                    source_role="FAMILY",
+                ),
+            ),
+            child_refs=(),
+        )
+        data = RawGenealogyData(
+            persons={"I1": descendant, "I2": spouse},
+            families={"F1": family},
+            events={"E1": marriage},
+            root_person_id="I1",
+        )
+        traversal = TraversalResult(
+            root_person_id="I1",
+            rows=(
+                TraversalRow(
+                    person_id="I1",
+                    generation=1,
+                    role=TraversalRole.DESCENDANT,
+                    family_id=None,
+                    spouse_of_person_id=None,
+                ),
+                TraversalRow(
+                    person_id="I2",
+                    generation=1,
+                    role=TraversalRole.SPOUSE,
+                    family_id="F1",
+                    spouse_of_person_id="I1",
+                ),
+            ),
+            family_occurrences=(
+                TraversalFamilyOccurrence(
+                    family_id="F1",
+                    descendant_person_id="I1",
+                    descendant_row_index=0,
+                    spouse_person_id="I2",
+                    spouse_row_index=1,
+                    state=FamilyTraversalState.EXPLORED,
+                    referenced_row_index=None,
+                ),
+            ),
+        )
+        temporal_results = TemporalInferenceEngine().run(data)
+        model = TimelineModelBuilder().build(
+            data=data,
+            traversal=traversal,
+            temporal_results=temporal_results,
+        )
+
+        marriage_target = TemporalTarget(
+            owner_type=TemporalOwnerType.FAMILY,
+            owner_id="F1",
+            semantic=TargetSemantic.MARRIAGE,
+        )
+        self.assertIn(marriage_target, model.temporal_results)
+        marriage_result = model.temporal_results[marriage_target]
+        self.assertIsNone(marriage_result.estimate.representative_value)
+
+        layout = LayoutEngine().build(model)
+
+        self.assertEqual(layout.marriage_node_placements, ())
+
 if __name__ == "__main__":
     unittest.main()
