@@ -589,5 +589,76 @@ class LayoutEngineTests(unittest.TestCase):
         self.assertEqual(placement.x, float(date(1870, 1, 1).toordinal()))
         self.assertEqual(placement.y, 35.0)
 
+    def test_family_without_marriage_date_creates_no_marriage_node(self) -> None:
+        descendant = Person(
+            person_id="I1",
+            display_name="Descendant",
+            gender=PersonGender.UNKNOWN,
+            event_refs=(),
+            parent_family_ids=(),
+            family_ids=("F1",),
+        )
+        spouse = Person(
+            person_id="I2",
+            display_name="Spouse",
+            gender=PersonGender.UNKNOWN,
+            event_refs=(),
+            parent_family_ids=(),
+            family_ids=("F1",),
+        )
+        family = Family(
+            family_id="F1",
+            parent1_id="I1",
+            parent2_id="I2",
+            event_refs=(),
+            child_refs=(),
+        )
+        data = RawGenealogyData(
+            persons={"I1": descendant, "I2": spouse},
+            families={"F1": family},
+            events={},
+            root_person_id="I1",
+        )
+        traversal = TraversalResult(
+            root_person_id="I1",
+            rows=(
+                TraversalRow(
+                    person_id="I1",
+                    generation=1,
+                    role=TraversalRole.DESCENDANT,
+                    family_id=None,
+                    spouse_of_person_id=None,
+                ),
+                TraversalRow(
+                    person_id="I2",
+                    generation=1,
+                    role=TraversalRole.SPOUSE,
+                    family_id="F1",
+                    spouse_of_person_id="I1",
+                ),
+            ),
+            family_occurrences=(
+                TraversalFamilyOccurrence(
+                    family_id="F1",
+                    descendant_person_id="I1",
+                    descendant_row_index=0,
+                    spouse_person_id="I2",
+                    spouse_row_index=1,
+                    state=FamilyTraversalState.EXPLORED,
+                    referenced_row_index=None,
+                ),
+            ),
+        )
+        temporal_results = TemporalInferenceEngine().run(data)
+        model = TimelineModelBuilder().build(
+            data=data,
+            traversal=traversal,
+            temporal_results=temporal_results,
+        )
+
+        layout = LayoutEngine().build(model)
+
+        self.assertEqual(layout.marriage_node_placements, ())
+
 if __name__ == "__main__":
     unittest.main()
