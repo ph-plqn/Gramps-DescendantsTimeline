@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from descendants_timeline.layout.marriage_node_placement import (
     MarriageNodePlacement,
 )
@@ -21,11 +23,22 @@ from descendants_timeline.model.temporal_target import (
     TemporalTarget,
 )
 
+from descendants_timeline.traversal.descendance_traversal import (
+    FamilyTraversalState,
+    TraversalRole,
+)
+
 class LayoutEngine:
     """Transforme un TimelineModel en placements logiques."""
 
     DEFAULT_TOP_MARGIN = 20.0
     DEFAULT_ROW_HEIGHT = 30.0
+    # Distance géométrique sur l'axe X, sans signification temporelle.
+    LIFE_SPAN_OFFSET = 3650.0
+    # Distance géométrique sur l'axe X, sans signification temporelle.
+    VISUAL_OFFSET = 365.0
+    # Origine géométrique sur l'axe X, sans signification temporelle.
+    LOGICAL_X_ORIGIN = 0.0
 
     def build(self, model: TimelineModel) -> TimelineLayout:
         scale = TimelineScale()
@@ -39,6 +52,181 @@ class LayoutEngine:
             )
             for row_index, row in enumerate(model.traversal.rows)
         )
+
+        # Les sources restent les placements propres de la première passe.
+        own_person_placements = person_placements
+        resolved_person_placements = list(person_placements)
+        for occurrence in model.traversal.family_occurrences:
+            if (
+                occurrence.spouse_person_id is None
+                or occurrence.spouse_row_index is None
+            ):
+                continue
+
+            descendant_index = occurrence.descendant_row_index
+            spouse_index = occurrence.spouse_row_index
+            spouse = resolved_person_placements[spouse_index]
+            descendant_x_start = own_person_placements[descendant_index].x_start
+            if spouse.x_start is None and descendant_x_start is not None:
+                resolved_person_placements[spouse_index] = replace(
+                    spouse,
+                    x_start=descendant_x_start,
+                    x_end=(
+                        spouse.x_end
+                        if spouse.x_end is not None
+                        else descendant_x_start + self.LIFE_SPAN_OFFSET
+                    ),
+                )
+
+            descendant = resolved_person_placements[descendant_index]
+            spouse_x_start = own_person_placements[occurrence.spouse_row_index].x_start
+            if descendant.x_start is not None or spouse_x_start is None:
+                continue
+
+            resolved_person_placements[descendant_index] = replace(
+                descendant,
+                x_start=spouse_x_start,
+                x_end=(
+                    descendant.x_end
+                    if descendant.x_end is not None
+                    else spouse_x_start + self.LIFE_SPAN_OFFSET
+                ),
+            )
+
+        for row_index, row in enumerate(model.traversal.rows):
+            if row.role is not TraversalRole.ROOT:
+                continue
+            placement = resolved_person_placements[row_index]
+            if placement.x_start is not None:
+                continue
+            resolved_person_placements[row_index] = replace(
+                placement,
+                x_start=self.LOGICAL_X_ORIGIN,
+                x_end=(
+                    placement.x_end
+                    if placement.x_end is not None
+                    else self.LOGICAL_X_ORIGIN + self.LIFE_SPAN_OFFSET
+                ),
+            )
+
+        # La fratrie propage les positions résolues dans l'ordre des child_refs.
+        for family in model.data.families.values():
+            previous_x_start = None
+            for child_index, child_ref in enumerate(family.child_refs):
+                for row_index, row in enumerate(model.traversal.rows):
+                    if (
+                        row.role is not TraversalRole.DESCENDANT
+                        or row.family_id != family.family_id
+                        or row.person_id != child_ref.person_id
+                    ):
+                        continue
+
+                    child = resolved_person_placements[row_index]
+                    if child.x_start is None and previous_x_start is None:
+                        for next_child_ref in family.child_refs[child_index + 1:]:
+                            for next_row_index, next_row in enumerate(model.traversal.rows):
+                                if (
+                                    next_row.role is not TraversalRole.DESCENDANT
+                                    or next_row.family_id != family.family_id
+                                    or next_row.person_id != next_child_ref.person_id
+                                ):
+                                    continue
+                                next_x_start = resolved_person_placements[next_row_index].x_start
+                                if next_x_start is not None:
+                                    previous_x_start = next_x_start
+                                    break
+                            if previous_x_start is not None:
+                                break
+
+                    if child.x_start is not None:
+                        previous_x_start = child.x_start
+                    elif previous_x_start is not None:
+                        resolved_person_placements[row_index] = replace(
+                            child,
+                            x_start=previous_x_start,
+                            x_end=(
+                                child.x_end
+                                if child.x_end is not None
+                                else previous_x_start + self.LIFE_SPAN_OFFSET
+                            ),
+                        )
+
+        for row_index, row in enumerate(model.traversal.rows):
+            if row.role is not TraversalRole.DESCENDANT:
+                continue
+            placement = resolved_person_placements[row_index]
+            if placement.x_start is not None or row.family_id is None:
+                continue
+
+            marriage_target = TemporalTarget(
+                owner_type=TemporalOwnerType.FAMILY,
+                owner_id=row.family_id,
+                semantic=TargetSemantic.MARRIAGE,
+            )
+            marriage_result = model.temporal_results.get(marriage_target)
+            if marriage_result is None:
+                continue
+            display_value = determine_display_value(marriage_result)
+            if display_value is None:
+                continue
+
+            marriage_x = scale.date_to_x(display_value)
+            resolved_person_placements[row_index] = replace(
+                placement,
+                x_start=marriage_x,
+                x_end=(
+                    placement.x_end
+                    if placement.x_end is not None
+                    else marriage_x + self.LIFE_SPAN_OFFSET
+                ),
+            )
+
+        for row_index, row in enumerate(model.traversal.rows):
+            if row.role is not TraversalRole.DESCENDANT:
+                continue
+            placement = resolved_person_placements[row_index]
+            if placement.x_start is not None or row.family_id is None:
+                continue
+
+            parent_occurrence = next(
+                (
+                    occurrence
+                    for occurrence in model.traversal.family_occurrences
+                    if occurrence.family_id == row.family_id
+                    and occurrence.state is FamilyTraversalState.EXPLORED
+                ),
+                None,
+            )
+            if parent_occurrence is None:
+                continue
+            parent_x_starts = [
+                resolved_person_placements[
+                    parent_occurrence.descendant_row_index
+                ].x_start
+            ]
+            if parent_occurrence.spouse_row_index is not None:
+                parent_x_starts.append(
+                    resolved_person_placements[
+                        parent_occurrence.spouse_row_index
+                    ].x_start
+                )
+            parent_x_starts = [x for x in parent_x_starts if x is not None]
+            if not parent_x_starts:
+                continue
+
+            parent_x_start = max(parent_x_starts)
+            child_x_start = parent_x_start + self.VISUAL_OFFSET
+            resolved_person_placements[row_index] = replace(
+                placement,
+                x_start=child_x_start,
+                x_end=(
+                    placement.x_end
+                    if placement.x_end is not None
+                    else child_x_start + self.LIFE_SPAN_OFFSET
+                ),
+            )
+
+        person_placements = tuple(resolved_person_placements)
 
         marriage_node_placements = []
         for occurrence in model.traversal.family_occurrences:
@@ -77,10 +265,13 @@ class LayoutEngine:
             )
 
         remarriage_segment_placements = []
-        married_person_ids = set()
+        married_family_ids_by_person = {}
         for marriage in marriage_node_placements:
             person_id = marriage.descendant_person_id
-            if person_id in married_person_ids:
+            family_ids = married_family_ids_by_person.setdefault(person_id, set())
+            if marriage.family_id in family_ids:
+                continue
+            if family_ids:
                 person_y = person_placements[marriage.descendant_row_index].y
                 remarriage_segment_placements.append(
                     RemarriageSegmentPlacement(
@@ -90,7 +281,7 @@ class LayoutEngine:
                         y_end=max(person_y, marriage.y),
                     )
                 )
-            married_person_ids.add(person_id)
+            family_ids.add(marriage.family_id)
 
         return TimelineLayout(
             person_placements=person_placements,
@@ -131,6 +322,9 @@ class LayoutEngine:
             display_value = determine_display_value(death_result)
             if display_value is not None:
                 x_end = scale.date_to_x(display_value)
+
+        if x_end is None and x_start is not None:
+            x_end = x_start + self.LIFE_SPAN_OFFSET
 
         return PersonPlacement(
             person_id=row.person_id,
