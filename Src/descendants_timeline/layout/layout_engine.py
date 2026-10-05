@@ -12,6 +12,9 @@ from descendants_timeline.layout.person_placement import PersonPlacement
 from descendants_timeline.layout.timeline_layout import TimelineLayout
 from descendants_timeline.timeline.timeline_model import TimelineModel
 from descendants_timeline.layout.timeline_scale import TimelineScale
+from descendants_timeline.layout.temporal_display_value import (
+    determine_display_value,
+)
 from descendants_timeline.model.temporal_target import (
     TargetSemantic,
     TemporalOwnerType,
@@ -51,10 +54,10 @@ class LayoutEngine:
                 semantic=TargetSemantic.MARRIAGE,
             )
             marriage_result = model.temporal_results.get(marriage_target)
-            if (
-                marriage_result is None
-                or marriage_result.estimate.representative_value is None
-            ):
+            if marriage_result is None:
+                continue
+            display_value = determine_display_value(marriage_result)
+            if display_value is None:
                 continue
 
             descendant_y = person_placements[occurrence.descendant_row_index].y
@@ -67,7 +70,7 @@ class LayoutEngine:
                     descendant_row_index=occurrence.descendant_row_index,
                     spouse_row_index=occurrence.spouse_row_index,
                     x=scale.date_to_x(
-                        marriage_result.estimate.representative_value
+                        display_value
                     ),
                     y=(descendant_y + spouse_y) / 2.0,
                 )
@@ -118,22 +121,16 @@ class LayoutEngine:
 
         x_start = None
 
-        if (
-            birth_result is not None
-            and birth_result.estimate.representative_value is not None
-        ):
-            x_start = scale.date_to_x(
-                birth_result.estimate.representative_value
-            )
+        if birth_result is not None:
+            display_value = determine_display_value(birth_result)
+            if display_value is not None:
+                x_start = scale.date_to_x(display_value)
         x_end = None
 
-        if (
-            death_result is not None
-            and death_result.estimate.representative_value is not None
-        ):
-            x_end = scale.date_to_x(
-                death_result.estimate.representative_value
-            )
+        if death_result is not None:
+            display_value = determine_display_value(death_result)
+            if display_value is not None:
+                x_end = scale.date_to_x(display_value)
 
         return PersonPlacement(
             person_id=row.person_id,

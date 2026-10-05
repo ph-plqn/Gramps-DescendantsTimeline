@@ -328,7 +328,27 @@ class LayoutEngineTests(unittest.TestCase):
             placement.x_start,
             float(date(1840, 1, 1).toordinal()),
         )
-        self.assertIsNone(placement.x_end)
+        from descendants_timeline.layout.timeline_scale import TimelineScale
+        from descendants_timeline.model.temporal_target import (
+            TargetSemantic,
+            TemporalOwnerType,
+            TemporalTarget,
+        )
+
+        death_target = TemporalTarget(
+            owner_type=TemporalOwnerType.PERSON,
+            owner_id="I1",
+            semantic=TargetSemantic.DEATH,
+        )
+        death_result = model.temporal_results[death_target]
+        self.assertIsNone(death_result.estimate.representative_value)
+        self.assertIsNotNone(death_result.reconciled_domain.principal_minimum)
+        self.assertEqual(
+            placement.x_end,
+            TimelineScale().date_to_x(
+                death_result.reconciled_domain.principal_minimum.value
+            ),
+        )
     def test_death_representative_value_sets_person_x_end(self) -> None:
         death = Event(
             event_id="E1",
@@ -386,7 +406,27 @@ class LayoutEngineTests(unittest.TestCase):
 
         placement = layout.person_placements[0]
 
-        self.assertIsNone(placement.x_start)
+        from descendants_timeline.layout.timeline_scale import TimelineScale
+        from descendants_timeline.model.temporal_target import (
+            TargetSemantic,
+            TemporalOwnerType,
+            TemporalTarget,
+        )
+
+        birth_target = TemporalTarget(
+            owner_type=TemporalOwnerType.PERSON,
+            owner_id="I1",
+            semantic=TargetSemantic.BIRTH,
+        )
+        birth_result = model.temporal_results[birth_target]
+        self.assertIsNone(birth_result.estimate.representative_value)
+        self.assertIsNotNone(birth_result.reconciled_domain.principal_maximum)
+        self.assertEqual(
+            placement.x_start,
+            TimelineScale().date_to_x(
+                birth_result.reconciled_domain.principal_maximum.value
+            ),
+        )
 
         self.assertEqual(
             placement.x_end,
@@ -660,7 +700,7 @@ class LayoutEngineTests(unittest.TestCase):
 
         self.assertEqual(layout.marriage_node_placements, ())
 
-    def test_marriage_without_representative_value_creates_no_marriage_node(self) -> None:
+    def test_marriage_without_representative_value_uses_domain_midpoint(self) -> None:
         from descendants_timeline.model.temporal_target import (
             TargetSemantic,
             TemporalOwnerType,
@@ -767,7 +807,15 @@ class LayoutEngineTests(unittest.TestCase):
 
         layout = LayoutEngine().build(model)
 
-        self.assertEqual(layout.marriage_node_placements, ())
+        from descendants_timeline.layout.timeline_scale import TimelineScale
+
+        self.assertIsNone(marriage_result.estimate.representative_value)
+        self.assertEqual(len(layout.marriage_node_placements), 1)
+        placement = layout.marriage_node_placements[0]
+        minimum = marriage_result.reconciled_domain.principal_minimum.value
+        maximum = marriage_result.reconciled_domain.principal_maximum.value
+        midpoint = minimum + (maximum - minimum) // 2
+        self.assertEqual(placement.x, TimelineScale().date_to_x(midpoint))
 
     def test_second_marriage_creates_vertical_remarriage_segment(self) -> None:
         descendant = Person(
@@ -1074,6 +1122,100 @@ class LayoutEngineTests(unittest.TestCase):
         self.assertEqual(second_segment.x, float(date(1910, 1, 1).toordinal()))
         self.assertEqual(second_segment.y_start, 20.0)
         self.assertEqual(second_segment.y_end, 65.0)
+
+    def test_death_without_representative_value_uses_domain_minimum_for_x_end(self) -> None:
+        from descendants_timeline.inference.constraint_resolution import (
+            ConstraintResolution,
+        )
+        from descendants_timeline.inference.reconciled_temporal_domain import (
+            ReconciledBound,
+            ReconciledBoundOrigin,
+            ReconciledTemporalDomain,
+        )
+        from descendants_timeline.inference.temporal_estimate import TemporalEstimate
+        from descendants_timeline.inference.temporal_inference_result import (
+            TemporalInferenceResult,
+        )
+        from descendants_timeline.layout.timeline_scale import TimelineScale
+        from descendants_timeline.model.temporal_target import (
+            TargetSemantic,
+            TemporalOwnerType,
+            TemporalTarget,
+        )
+        from descendants_timeline.model.temporal_target_entry import TemporalTargetEntry
+
+        root = Person(
+            person_id="I1",
+            display_name="Root",
+            gender=PersonGender.UNKNOWN,
+            event_refs=(),
+            parent_family_ids=(),
+            family_ids=(),
+        )
+        data = RawGenealogyData(
+            persons={"I1": root},
+            families={},
+            events={},
+            root_person_id="I1",
+        )
+        traversal = DescendanceTraversal().traverse(data, "I1")
+        death_target = TemporalTarget(
+            owner_type=TemporalOwnerType.PERSON,
+            owner_id="I1",
+            semantic=TargetSemantic.DEATH,
+        )
+        target_entry = TemporalTargetEntry(
+            target=death_target,
+            gramps_value=TemporalValue.unknown(),
+            anomalies=(),
+        )
+        constraint_resolution = ConstraintResolution(
+            target=death_target,
+            hard_minimum=None,
+            hard_maximum=None,
+            refined_minimum=None,
+            refined_maximum=None,
+            conflict_type=None,
+            conflicting_constraints=(),
+        )
+        reconciled_domain = ReconciledTemporalDomain(
+            target=death_target,
+            gramps_value=target_entry.gramps_value,
+            constraint_resolution=constraint_resolution,
+            principal_minimum=ReconciledBound(
+                value=date(1900, 1, 1),
+                origin=ReconciledBoundOrigin.GRAMPS,
+            ),
+            principal_maximum=None,
+            conflict_type=None,
+            conflicting_bounds=(),
+        )
+        death_result = TemporalInferenceResult(
+            target_entry=target_entry,
+            constraint_resolution=constraint_resolution,
+            reconciled_domain=reconciled_domain,
+            estimate=TemporalEstimate(
+                representative_value=None,
+                certainty=CertaintyLevel.UNDETERMINED,
+            ),
+        )
+        model = TimelineModel(
+            data=data,
+            traversal=traversal,
+            temporal_results={death_target: death_result},
+        )
+
+        layout = LayoutEngine().build(model)
+
+        placement = layout.person_placements[0]
+        self.assertEqual(placement.person_id, "I1")
+        self.assertIsNone(death_result.estimate.representative_value)
+        self.assertEqual(
+            placement.x_end,
+            TimelineScale().date_to_x(
+                death_result.reconciled_domain.principal_minimum.value
+            ),
+        )
 
 if __name__ == "__main__":
     unittest.main()
