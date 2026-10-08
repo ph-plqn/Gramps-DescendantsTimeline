@@ -273,6 +273,67 @@ class LayoutEngineTests(unittest.TestCase):
         )
         self.assertEqual(spouse_placement.y, 50.0)
 
+    def test_birth_representative_value_sets_person_x_start_kind(self) -> None:
+        from descendants_timeline.layout.position_kind import PositionKind
+
+        birth = Event(
+            event_id="E1",
+            source_type="BIRTH",
+            semantic=EventSemantic.BIRTH,
+            date=TemporalValue(
+                source_value="01/01/1840",
+                source_calendar="GREGORIAN",
+                normalized_minimum=date(1840, 1, 1),
+                normalized_maximum=date(1840, 1, 1),
+                representative_value=date(1840, 1, 1),
+                value_origin=ValueOrigin.GRAMPS,
+                source_quality=SourceQuality.NORMAL,
+                evidence_status=EvidenceStatus.EVIDENCE_USABLE,
+                certainty=CertaintyLevel.CERTAIN,
+            ),
+        )
+
+        root = Person(
+            person_id="I1",
+            display_name="Root",
+            gender=PersonGender.UNKNOWN,
+            event_refs=(
+                PersonEventRef(
+                    event_id="E1",
+                    semantic_role=EventRoleSemantic.PRINCIPAL,
+                    source_role="PRIMARY",
+                ),
+            ),
+            parent_family_ids=(),
+            family_ids=(),
+        )
+
+        data = RawGenealogyData(
+            persons={"I1": root},
+            families={},
+            events={"E1": birth},
+            root_person_id="I1",
+        )
+
+        traversal = DescendanceTraversal().traverse(
+            data,
+            "I1",
+        )
+
+        temporal_results = TemporalInferenceEngine().run(data)
+
+        model = TimelineModelBuilder().build(
+            data=data,
+            traversal=traversal,
+            temporal_results=temporal_results,
+        )
+
+        layout = LayoutEngine().build(model)
+
+        placement = layout.person_placements[0]
+
+        self.assertIs(placement.x_start_kind, PositionKind.REPRESENTATIVE)
+
     def test_birth_representative_value_sets_person_x_start(self) -> None:
         birth = Event(
             event_id="E1",
@@ -355,6 +416,128 @@ class LayoutEngineTests(unittest.TestCase):
                 death_result.reconciled_domain.principal_minimum.value
             ),
         )
+    def test_birth_domain_display_sets_person_x_start_kind(self) -> None:
+        from descendants_timeline.layout.position_kind import PositionKind
+
+        death = Event(
+            event_id="E1",
+            source_type="DEATH",
+            semantic=EventSemantic.DEATH,
+            date=TemporalValue(
+                source_value="01/01/1900",
+                source_calendar="GREGORIAN",
+                normalized_minimum=date(1900, 1, 1),
+                normalized_maximum=date(1900, 1, 1),
+                representative_value=date(1900, 1, 1),
+                value_origin=ValueOrigin.GRAMPS,
+                source_quality=SourceQuality.NORMAL,
+                evidence_status=EvidenceStatus.EVIDENCE_USABLE,
+                certainty=CertaintyLevel.CERTAIN,
+            ),
+        )
+
+        root = Person(
+            person_id="I1",
+            display_name="Root",
+            gender=PersonGender.UNKNOWN,
+            event_refs=(
+                PersonEventRef(
+                    event_id="E1",
+                    semantic_role=EventRoleSemantic.PRINCIPAL,
+                    source_role="PRIMARY",
+                ),
+            ),
+            parent_family_ids=(),
+            family_ids=(),
+        )
+
+        data = RawGenealogyData(
+            persons={"I1": root},
+            families={},
+            events={"E1": death},
+            root_person_id="I1",
+        )
+
+        traversal = DescendanceTraversal().traverse(
+            data,
+            "I1",
+        )
+
+        temporal_results = TemporalInferenceEngine().run(data)
+
+        model = TimelineModelBuilder().build(
+            data=data,
+            traversal=traversal,
+            temporal_results=temporal_results,
+        )
+
+        layout = LayoutEngine().build(model)
+
+        placement = layout.person_placements[0]
+
+        self.assertIs(placement.x_start_kind, PositionKind.DOMAIN_DISPLAY)
+
+    def test_death_representative_value_sets_person_x_end_kind(self) -> None:
+        from descendants_timeline.layout.position_kind import PositionKind
+
+        death = Event(
+            event_id="E1",
+            source_type="DEATH",
+            semantic=EventSemantic.DEATH,
+            date=TemporalValue(
+                source_value="01/01/1900",
+                source_calendar="GREGORIAN",
+                normalized_minimum=date(1900, 1, 1),
+                normalized_maximum=date(1900, 1, 1),
+                representative_value=date(1900, 1, 1),
+                value_origin=ValueOrigin.GRAMPS,
+                source_quality=SourceQuality.NORMAL,
+                evidence_status=EvidenceStatus.EVIDENCE_USABLE,
+                certainty=CertaintyLevel.CERTAIN,
+            ),
+        )
+
+        root = Person(
+            person_id="I1",
+            display_name="Root",
+            gender=PersonGender.UNKNOWN,
+            event_refs=(
+                PersonEventRef(
+                    event_id="E1",
+                    semantic_role=EventRoleSemantic.PRINCIPAL,
+                    source_role="PRIMARY",
+                ),
+            ),
+            parent_family_ids=(),
+            family_ids=(),
+        )
+
+        data = RawGenealogyData(
+            persons={"I1": root},
+            families={},
+            events={"E1": death},
+            root_person_id="I1",
+        )
+
+        traversal = DescendanceTraversal().traverse(
+            data,
+            "I1",
+        )
+
+        temporal_results = TemporalInferenceEngine().run(data)
+
+        model = TimelineModelBuilder().build(
+            data=data,
+            traversal=traversal,
+            temporal_results=temporal_results,
+        )
+
+        layout = LayoutEngine().build(model)
+
+        placement = layout.person_placements[0]
+
+        self.assertIs(placement.x_end_kind, PositionKind.REPRESENTATIVE)
+
     def test_death_representative_value_sets_person_x_end(self) -> None:
         death = Event(
             event_id="E1",
@@ -1129,6 +1312,94 @@ class LayoutEngineTests(unittest.TestCase):
         self.assertEqual(second_segment.y_start, 20.0)
         self.assertEqual(second_segment.y_end, 65.0)
 
+    def test_death_domain_display_sets_person_x_end_kind(self) -> None:
+        from descendants_timeline.inference.constraint_resolution import (
+            ConstraintResolution,
+        )
+        from descendants_timeline.inference.reconciled_temporal_domain import (
+            ReconciledBound,
+            ReconciledBoundOrigin,
+            ReconciledTemporalDomain,
+        )
+        from descendants_timeline.inference.temporal_estimate import TemporalEstimate
+        from descendants_timeline.inference.temporal_inference_result import (
+            TemporalInferenceResult,
+        )
+        from descendants_timeline.layout.position_kind import PositionKind
+        from descendants_timeline.model.temporal_target import (
+            TargetSemantic,
+            TemporalOwnerType,
+            TemporalTarget,
+        )
+        from descendants_timeline.model.temporal_target_entry import TemporalTargetEntry
+
+        root = Person(
+            person_id="I1",
+            display_name="Root",
+            gender=PersonGender.UNKNOWN,
+            event_refs=(),
+            parent_family_ids=(),
+            family_ids=(),
+        )
+        data = RawGenealogyData(
+            persons={"I1": root},
+            families={},
+            events={},
+            root_person_id="I1",
+        )
+        traversal = DescendanceTraversal().traverse(data, "I1")
+        death_target = TemporalTarget(
+            owner_type=TemporalOwnerType.PERSON,
+            owner_id="I1",
+            semantic=TargetSemantic.DEATH,
+        )
+        target_entry = TemporalTargetEntry(
+            target=death_target,
+            gramps_value=TemporalValue.unknown(),
+            anomalies=(),
+        )
+        constraint_resolution = ConstraintResolution(
+            target=death_target,
+            hard_minimum=None,
+            hard_maximum=None,
+            refined_minimum=None,
+            refined_maximum=None,
+            conflict_type=None,
+            conflicting_constraints=(),
+        )
+        reconciled_domain = ReconciledTemporalDomain(
+            target=death_target,
+            gramps_value=target_entry.gramps_value,
+            constraint_resolution=constraint_resolution,
+            principal_minimum=ReconciledBound(
+                value=date(1900, 1, 1),
+                origin=ReconciledBoundOrigin.GRAMPS,
+            ),
+            principal_maximum=None,
+            conflict_type=None,
+            conflicting_bounds=(),
+        )
+        death_result = TemporalInferenceResult(
+            target_entry=target_entry,
+            constraint_resolution=constraint_resolution,
+            reconciled_domain=reconciled_domain,
+            estimate=TemporalEstimate(
+                representative_value=None,
+                certainty=CertaintyLevel.UNDETERMINED,
+            ),
+        )
+        model = TimelineModel(
+            data=data,
+            traversal=traversal,
+            temporal_results={death_target: death_result},
+        )
+
+        layout = LayoutEngine().build(model)
+
+        placement = layout.person_placements[0]
+
+        self.assertIs(placement.x_end_kind, PositionKind.DOMAIN_DISPLAY)
+
     def test_death_without_representative_value_uses_domain_minimum_for_x_end(self) -> None:
         from descendants_timeline.inference.constraint_resolution import (
             ConstraintResolution,
@@ -1222,6 +1493,293 @@ class LayoutEngineTests(unittest.TestCase):
                 death_result.reconciled_domain.principal_minimum.value
             ),
         )
+
+    def test_reversed_life_bar_receives_short_visual_length(self) -> None:
+        from descendants_timeline.inference.constraint_resolution import (
+            ConstraintResolution,
+        )
+        from descendants_timeline.inference.reconciled_temporal_domain import (
+            ReconciledTemporalDomain,
+        )
+        from descendants_timeline.inference.temporal_estimate import TemporalEstimate
+        from descendants_timeline.inference.temporal_inference_result import (
+            TemporalInferenceResult,
+        )
+        from descendants_timeline.layout.position_kind import PositionKind
+        from descendants_timeline.layout.life_bar_kind import LifeBarKind
+        from descendants_timeline.model.temporal_target import (
+            TargetSemantic,
+            TemporalOwnerType,
+            TemporalTarget,
+        )
+        from descendants_timeline.model.temporal_target_entry import TemporalTargetEntry
+
+        root = Person(
+            person_id="I1",
+            display_name="Root",
+            gender=PersonGender.UNKNOWN,
+            event_refs=(),
+            parent_family_ids=(),
+            family_ids=(),
+        )
+        data = RawGenealogyData(
+            persons={"I1": root},
+            families={},
+            events={},
+            root_person_id="I1",
+        )
+        traversal = DescendanceTraversal().traverse(data, "I1")
+        birth_date = date(1900, 1, 1)
+        temporal_results = {}
+        for semantic, representative_value, certainty in (
+            (TargetSemantic.BIRTH, birth_date, CertaintyLevel.CERTAIN),
+            (TargetSemantic.DEATH, date(1840, 1, 1), CertaintyLevel.CERTAIN),
+        ):
+            target = TemporalTarget(
+                owner_type=TemporalOwnerType.PERSON,
+                owner_id="I1",
+                semantic=semantic,
+            )
+            target_entry = TemporalTargetEntry(
+                target=target,
+                gramps_value=TemporalValue.unknown(),
+                anomalies=(),
+            )
+            constraint_resolution = ConstraintResolution(
+                target=target,
+                hard_minimum=None,
+                hard_maximum=None,
+                refined_minimum=None,
+                refined_maximum=None,
+                conflict_type=None,
+                conflicting_constraints=(),
+            )
+            reconciled_domain = ReconciledTemporalDomain(
+                target=target,
+                gramps_value=target_entry.gramps_value,
+                constraint_resolution=constraint_resolution,
+                principal_minimum=None,
+                principal_maximum=None,
+                conflict_type=None,
+                conflicting_bounds=(),
+            )
+            temporal_results[target] = TemporalInferenceResult(
+                target_entry=target_entry,
+                constraint_resolution=constraint_resolution,
+                reconciled_domain=reconciled_domain,
+                estimate=TemporalEstimate(
+                    representative_value=representative_value,
+                    certainty=certainty,
+                ),
+            )
+        model = TimelineModel(
+            data=data,
+            traversal=traversal,
+            temporal_results=temporal_results,
+        )
+
+        layout = LayoutEngine().build(model)
+
+        placement = layout.person_placements[0]
+
+        self.assertIs(placement.x_start_kind, PositionKind.REPRESENTATIVE)
+        self.assertIs(placement.x_end_kind, PositionKind.REPRESENTATIVE)
+        self.assertGreater(placement.x_start, placement.x_end)
+        self.assertIs(placement.life_bar_kind, LifeBarKind.REVERSED)
+        self.assertEqual(
+            placement.short_bar_length,
+            LayoutEngine.LIFE_SPAN_OFFSET / 2,
+        )
+
+    def test_zero_length_life_bar_receives_short_visual_length(self) -> None:
+        from descendants_timeline.inference.constraint_resolution import (
+            ConstraintResolution,
+        )
+        from descendants_timeline.inference.reconciled_temporal_domain import (
+            ReconciledTemporalDomain,
+        )
+        from descendants_timeline.inference.temporal_estimate import TemporalEstimate
+        from descendants_timeline.inference.temporal_inference_result import (
+            TemporalInferenceResult,
+        )
+        from descendants_timeline.layout.position_kind import PositionKind
+        from descendants_timeline.layout.life_bar_kind import LifeBarKind
+        from descendants_timeline.model.temporal_target import (
+            TargetSemantic,
+            TemporalOwnerType,
+            TemporalTarget,
+        )
+        from descendants_timeline.model.temporal_target_entry import TemporalTargetEntry
+
+        root = Person(
+            person_id="I1",
+            display_name="Root",
+            gender=PersonGender.UNKNOWN,
+            event_refs=(),
+            parent_family_ids=(),
+            family_ids=(),
+        )
+        data = RawGenealogyData(
+            persons={"I1": root},
+            families={},
+            events={},
+            root_person_id="I1",
+        )
+        traversal = DescendanceTraversal().traverse(data, "I1")
+        birth_date = date(1900, 1, 1)
+        temporal_results = {}
+        for semantic, representative_value, certainty in (
+            (TargetSemantic.BIRTH, birth_date, CertaintyLevel.CERTAIN),
+            (TargetSemantic.DEATH, birth_date, CertaintyLevel.CERTAIN),
+        ):
+            target = TemporalTarget(
+                owner_type=TemporalOwnerType.PERSON,
+                owner_id="I1",
+                semantic=semantic,
+            )
+            target_entry = TemporalTargetEntry(
+                target=target,
+                gramps_value=TemporalValue.unknown(),
+                anomalies=(),
+            )
+            constraint_resolution = ConstraintResolution(
+                target=target,
+                hard_minimum=None,
+                hard_maximum=None,
+                refined_minimum=None,
+                refined_maximum=None,
+                conflict_type=None,
+                conflicting_constraints=(),
+            )
+            reconciled_domain = ReconciledTemporalDomain(
+                target=target,
+                gramps_value=target_entry.gramps_value,
+                constraint_resolution=constraint_resolution,
+                principal_minimum=None,
+                principal_maximum=None,
+                conflict_type=None,
+                conflicting_bounds=(),
+            )
+            temporal_results[target] = TemporalInferenceResult(
+                target_entry=target_entry,
+                constraint_resolution=constraint_resolution,
+                reconciled_domain=reconciled_domain,
+                estimate=TemporalEstimate(
+                    representative_value=representative_value,
+                    certainty=certainty,
+                ),
+            )
+        model = TimelineModel(
+            data=data,
+            traversal=traversal,
+            temporal_results=temporal_results,
+        )
+
+        layout = LayoutEngine().build(model)
+
+        placement = layout.person_placements[0]
+
+        self.assertIs(placement.x_start_kind, PositionKind.REPRESENTATIVE)
+        self.assertIs(placement.x_end_kind, PositionKind.REPRESENTATIVE)
+        self.assertEqual(placement.x_start, placement.x_end)
+        self.assertIs(placement.life_bar_kind, LifeBarKind.ZERO_LENGTH)
+        self.assertEqual(
+            placement.short_bar_length,
+            LayoutEngine.LIFE_SPAN_OFFSET / 2,
+        )
+
+    def test_life_span_offset_sets_person_x_end_kind_to_visual_fallback(self) -> None:
+        from descendants_timeline.inference.constraint_resolution import (
+            ConstraintResolution,
+        )
+        from descendants_timeline.inference.reconciled_temporal_domain import (
+            ReconciledTemporalDomain,
+        )
+        from descendants_timeline.inference.temporal_estimate import TemporalEstimate
+        from descendants_timeline.inference.temporal_inference_result import (
+            TemporalInferenceResult,
+        )
+        from descendants_timeline.layout.temporal_display_value import (
+            determine_display_value,
+        )
+        from descendants_timeline.layout.position_kind import PositionKind
+        from descendants_timeline.model.temporal_target import (
+            TargetSemantic,
+            TemporalOwnerType,
+            TemporalTarget,
+        )
+        from descendants_timeline.model.temporal_target_entry import TemporalTargetEntry
+
+        root = Person(
+            person_id="I1",
+            display_name="Root",
+            gender=PersonGender.UNKNOWN,
+            event_refs=(),
+            parent_family_ids=(),
+            family_ids=(),
+        )
+        data = RawGenealogyData(
+            persons={"I1": root},
+            families={},
+            events={},
+            root_person_id="I1",
+        )
+        traversal = DescendanceTraversal().traverse(data, "I1")
+        birth_date = date(1840, 1, 1)
+        temporal_results = {}
+        for semantic, representative_value, certainty in (
+            (TargetSemantic.BIRTH, birth_date, CertaintyLevel.CERTAIN),
+            (TargetSemantic.DEATH, None, CertaintyLevel.UNDETERMINED),
+        ):
+            target = TemporalTarget(
+                owner_type=TemporalOwnerType.PERSON,
+                owner_id="I1",
+                semantic=semantic,
+            )
+            target_entry = TemporalTargetEntry(
+                target=target,
+                gramps_value=TemporalValue.unknown(),
+                anomalies=(),
+            )
+            constraint_resolution = ConstraintResolution(
+                target=target,
+                hard_minimum=None,
+                hard_maximum=None,
+                refined_minimum=None,
+                refined_maximum=None,
+                conflict_type=None,
+                conflicting_constraints=(),
+            )
+            reconciled_domain = ReconciledTemporalDomain(
+                target=target,
+                gramps_value=target_entry.gramps_value,
+                constraint_resolution=constraint_resolution,
+                principal_minimum=None,
+                principal_maximum=None,
+                conflict_type=None,
+                conflicting_bounds=(),
+            )
+            temporal_results[target] = TemporalInferenceResult(
+                target_entry=target_entry,
+                constraint_resolution=constraint_resolution,
+                reconciled_domain=reconciled_domain,
+                estimate=TemporalEstimate(
+                    representative_value=representative_value,
+                    certainty=certainty,
+                ),
+            )
+        death_result = temporal_results[target]
+        model = TimelineModel(
+            data=data,
+            traversal=traversal,
+            temporal_results=temporal_results,
+        )
+
+        layout = LayoutEngine().build(model)
+
+        placement = layout.person_placements[0]
+
+        self.assertIs(placement.x_end_kind, PositionKind.VISUAL_FALLBACK)
 
     def test_death_without_display_value_uses_life_span_offset_from_x_start(self) -> None:
         from descendants_timeline.inference.constraint_resolution import (
@@ -1323,6 +1881,106 @@ class LayoutEngineTests(unittest.TestCase):
             placement.x_end,
             placement.x_start + LayoutEngine.LIFE_SPAN_OFFSET,
         )
+
+    def test_spouse_fallback_sets_person_x_start_kind_to_visual_fallback(self) -> None:
+        from descendants_timeline.layout.position_kind import PositionKind
+        from descendants_timeline.model.temporal_target import (
+            TargetSemantic,
+            TemporalOwnerType,
+            TemporalTarget,
+        )
+
+        birth_date = date(1840, 1, 1)
+        birth = Event(
+            event_id="E1",
+            source_type="BIRTH",
+            semantic=EventSemantic.BIRTH,
+            date=TemporalValue(
+                source_value="01/01/1840",
+                source_calendar="GREGORIAN",
+                normalized_minimum=birth_date,
+                normalized_maximum=birth_date,
+                representative_value=birth_date,
+                value_origin=ValueOrigin.GRAMPS,
+                source_quality=SourceQuality.NORMAL,
+                evidence_status=EvidenceStatus.EVIDENCE_USABLE,
+                certainty=CertaintyLevel.CERTAIN,
+            ),
+        )
+        descendant = Person(
+            person_id="I1",
+            display_name="Descendant",
+            gender=PersonGender.UNKNOWN,
+            event_refs=(),
+            parent_family_ids=(),
+            family_ids=("F1",),
+        )
+        spouse = Person(
+            person_id="I2",
+            display_name="Spouse",
+            gender=PersonGender.UNKNOWN,
+            event_refs=(
+                PersonEventRef(
+                    event_id="E1",
+                    semantic_role=EventRoleSemantic.PRINCIPAL,
+                    source_role="PRIMARY",
+                ),
+            ),
+            parent_family_ids=(),
+            family_ids=("F1",),
+        )
+        family = Family(
+            family_id="F1",
+            parent1_id="I1",
+            parent2_id="I2",
+            event_refs=(),
+            child_refs=(),
+        )
+        data = RawGenealogyData(
+            persons={"I1": descendant, "I2": spouse},
+            families={"F1": family},
+            events={"E1": birth},
+            root_person_id="I1",
+        )
+        traversal = TraversalResult(
+            root_person_id="I1",
+            rows=(
+                TraversalRow("I1", 1, TraversalRole.DESCENDANT, None, None),
+                TraversalRow("I2", 1, TraversalRole.SPOUSE, "F1", "I1"),
+            ),
+            family_occurrences=(
+                TraversalFamilyOccurrence(
+                    family_id="F1",
+                    descendant_person_id="I1",
+                    descendant_row_index=0,
+                    spouse_person_id="I2",
+                    spouse_row_index=1,
+                    state=FamilyTraversalState.EXPLORED,
+                    referenced_row_index=None,
+                ),
+            ),
+        )
+        spouse_birth_target = TemporalTarget(
+            owner_type=TemporalOwnerType.PERSON,
+            owner_id="I2",
+            semantic=TargetSemantic.BIRTH,
+        )
+        spouse_birth_result = next(
+            result
+            for result in TemporalInferenceEngine().run(data)
+            if result.target_entry.target == spouse_birth_target
+        )
+        model = TimelineModel(
+            data=data,
+            traversal=traversal,
+            temporal_results={spouse_birth_target: spouse_birth_result},
+        )
+
+        layout = LayoutEngine().build(model)
+
+        placement = layout.person_placements[0]
+
+        self.assertIs(placement.x_start_kind, PositionKind.VISUAL_FALLBACK)
 
     def test_birth_without_display_value_uses_later_spouse_own_x_start(self) -> None:
         from descendants_timeline.model.temporal_target import (
@@ -1771,6 +2429,91 @@ class LayoutEngineTests(unittest.TestCase):
         self.assertEqual(placement_I3.x_start, float(birth_date.toordinal()))
         self.assertEqual(placement_I1.x_start, placement_I3.x_start)
 
+    def test_sibling_fallback_sets_person_x_start_kind_to_visual_fallback(self) -> None:
+        from descendants_timeline.layout.position_kind import PositionKind
+        from descendants_timeline.model.child_ref import ChildRef, ChildRelation
+        from descendants_timeline.model.temporal_target import (
+            TargetSemantic,
+            TemporalOwnerType,
+            TemporalTarget,
+        )
+
+        birth_date = date(1840, 1, 1)
+        persons = {}
+        for person_id, parent_family_ids, family_ids, event_refs in (
+            ("I1", (), ("F1",), ()),
+            (
+                "I2",
+                ("F1",),
+                (),
+                (PersonEventRef("E1", EventRoleSemantic.PRINCIPAL, "PRIMARY"),),
+            ),
+            ("I3", ("F1",), (), ()),
+        ):
+            persons[person_id] = Person(
+                person_id=person_id,
+                display_name=person_id,
+                gender=PersonGender.UNKNOWN,
+                event_refs=event_refs,
+                parent_family_ids=parent_family_ids,
+                family_ids=family_ids,
+            )
+        family = Family(
+            family_id="F1",
+            parent1_id="I1",
+            parent2_id=None,
+            event_refs=(),
+            child_refs=(
+                ChildRef("I2", ChildRelation.BIRTH, ChildRelation.NONE),
+                ChildRef("I3", ChildRelation.BIRTH, ChildRelation.NONE),
+            ),
+        )
+        birth = Event(
+            event_id="E1",
+            source_type="BIRTH",
+            semantic=EventSemantic.BIRTH,
+            date=TemporalValue(
+                source_value="01/01/1840",
+                source_calendar="GREGORIAN",
+                normalized_minimum=birth_date,
+                normalized_maximum=birth_date,
+                representative_value=birth_date,
+                value_origin=ValueOrigin.GRAMPS,
+                source_quality=SourceQuality.NORMAL,
+                evidence_status=EvidenceStatus.EVIDENCE_USABLE,
+                certainty=CertaintyLevel.CERTAIN,
+            ),
+        )
+        data = RawGenealogyData(
+            persons=persons,
+            families={"F1": family},
+            events={"E1": birth},
+            root_person_id="I1",
+        )
+        traversal = DescendanceTraversal().traverse(data, "I1")
+        birth_target = TemporalTarget(
+            owner_type=TemporalOwnerType.PERSON,
+            owner_id="I2",
+            semantic=TargetSemantic.BIRTH,
+        )
+        birth_result = next(
+            result
+            for result in TemporalInferenceEngine().run(data)
+            if result.target_entry.target == birth_target
+        )
+        model = TimelineModel(
+            data=data,
+            traversal=traversal,
+            temporal_results={birth_target: birth_result},
+        )
+
+        layout = LayoutEngine().build(model)
+
+        placements = {placement.person_id: placement for placement in layout.person_placements}
+        placement = placements["I3"]
+
+        self.assertIs(placement.x_start_kind, PositionKind.VISUAL_FALLBACK)
+
     def test_birth_fallback_uses_previous_sibling_in_gramps_child_order(self) -> None:
         from descendants_timeline.model.child_ref import ChildRef, ChildRelation
         from descendants_timeline.model.temporal_target import (
@@ -2108,6 +2851,94 @@ class LayoutEngineTests(unittest.TestCase):
         self.assertEqual(placement_I3.x_start, float(birth_date.toordinal()))
         self.assertEqual(placement_I2.x_start, placement_I3.x_start)
 
+    def test_parent_family_marriage_fallback_sets_person_x_start_kind_to_visual_fallback(self) -> None:
+        from descendants_timeline.layout.position_kind import PositionKind
+        from descendants_timeline.model.child_ref import ChildRef, ChildRelation
+        from descendants_timeline.model.temporal_target import (
+            TargetSemantic,
+            TemporalOwnerType,
+            TemporalTarget,
+        )
+
+        marriage_date = date(1830, 1, 1)
+        persons = {}
+        for person_id, parent_family_ids, family_ids in (
+            ("I1", (), ("F1",)),
+            ("I2", (), ("F1",)),
+            ("I3", ("F1",), ()),
+        ):
+            persons[person_id] = Person(
+                person_id=person_id,
+                display_name=person_id,
+                gender=PersonGender.UNKNOWN,
+                event_refs=(),
+                parent_family_ids=parent_family_ids,
+                family_ids=family_ids,
+            )
+        marriage = Event(
+            event_id="E1",
+            source_type="MARRIAGE",
+            semantic=EventSemantic.MARRIAGE,
+            date=TemporalValue(
+                source_value="01/01/1830",
+                source_calendar="GREGORIAN",
+                normalized_minimum=marriage_date,
+                normalized_maximum=marriage_date,
+                representative_value=marriage_date,
+                value_origin=ValueOrigin.GRAMPS,
+                source_quality=SourceQuality.NORMAL,
+                evidence_status=EvidenceStatus.EVIDENCE_USABLE,
+                certainty=CertaintyLevel.CERTAIN,
+            ),
+        )
+        family = Family(
+            family_id="F1",
+            parent1_id="I1",
+            parent2_id="I2",
+            event_refs=(
+                FamilyEventRef(
+                    event_id="E1",
+                    semantic_role=FamilyRoleSemantic.FAMILY,
+                    source_role="FAMILY",
+                ),
+            ),
+            child_refs=(
+                ChildRef("I3", ChildRelation.BIRTH, ChildRelation.BIRTH),
+            ),
+        )
+        data = RawGenealogyData(
+            persons=persons,
+            families={"F1": family},
+            events={"E1": marriage},
+            root_person_id="I1",
+        )
+        traversal = DescendanceTraversal().traverse(data, "I1")
+        marriage_target = TemporalTarget(
+            owner_type=TemporalOwnerType.FAMILY,
+            owner_id="F1",
+            semantic=TargetSemantic.MARRIAGE,
+        )
+        marriage_result = next(
+            result
+            for result in TemporalInferenceEngine().run(data)
+            if result.target_entry.target == marriage_target
+        )
+        model = TimelineModel(
+            data=data,
+            traversal=traversal,
+            temporal_results={marriage_target: marriage_result},
+        )
+
+        layout = LayoutEngine().build(model)
+
+        placement = next(
+            placement
+            for placement in layout.person_placements
+            if placement.person_id == "I3"
+        )
+
+        self.assertIs(placement.x_start_kind, PositionKind.VISUAL_FALLBACK)
+
     def test_birth_fallback_uses_parent_family_marriage_when_siblings_are_unusable(self) -> None:
         from descendants_timeline.model.child_ref import ChildRef, ChildRelation
         from descendants_timeline.model.temporal_target import (
@@ -2216,6 +3047,96 @@ class LayoutEngineTests(unittest.TestCase):
             if placement.person_id == "I3"
         )
         self.assertEqual(placement_I3.x_start, float(marriage_date.toordinal()))
+
+    def test_parent_coordinate_fallback_sets_person_x_start_kind_to_visual_fallback(self) -> None:
+        from descendants_timeline.layout.position_kind import PositionKind
+        from descendants_timeline.model.child_ref import ChildRef, ChildRelation
+        from descendants_timeline.model.temporal_target import (
+            TargetSemantic,
+            TemporalOwnerType,
+            TemporalTarget,
+        )
+
+        parent_birth_date = date(1800, 1, 1)
+        parent = Person(
+            person_id="I1",
+            display_name="Parent",
+            gender=PersonGender.UNKNOWN,
+            event_refs=(
+                PersonEventRef(
+                    event_id="E1",
+                    semantic_role=EventRoleSemantic.PRINCIPAL,
+                    source_role="PRIMARY",
+                ),
+            ),
+            parent_family_ids=(),
+            family_ids=("F1",),
+        )
+        child = Person(
+            person_id="I2",
+            display_name="Child",
+            gender=PersonGender.UNKNOWN,
+            event_refs=(),
+            parent_family_ids=("F1",),
+            family_ids=(),
+        )
+        birth = Event(
+            event_id="E1",
+            source_type="BIRTH",
+            semantic=EventSemantic.BIRTH,
+            date=TemporalValue(
+                source_value="01/01/1800",
+                source_calendar="GREGORIAN",
+                normalized_minimum=parent_birth_date,
+                normalized_maximum=parent_birth_date,
+                representative_value=parent_birth_date,
+                value_origin=ValueOrigin.GRAMPS,
+                source_quality=SourceQuality.NORMAL,
+                evidence_status=EvidenceStatus.EVIDENCE_USABLE,
+                certainty=CertaintyLevel.CERTAIN,
+            ),
+        )
+        family = Family(
+            family_id="F1",
+            parent1_id="I1",
+            parent2_id=None,
+            event_refs=(),
+            child_refs=(
+                ChildRef("I2", ChildRelation.BIRTH, ChildRelation.NONE),
+            ),
+        )
+        data = RawGenealogyData(
+            persons={"I1": parent, "I2": child},
+            families={"F1": family},
+            events={"E1": birth},
+            root_person_id="I1",
+        )
+        traversal = DescendanceTraversal().traverse(data, "I1")
+        parent_birth_target = TemporalTarget(
+            owner_type=TemporalOwnerType.PERSON,
+            owner_id="I1",
+            semantic=TargetSemantic.BIRTH,
+        )
+        parent_birth_result = next(
+            result
+            for result in TemporalInferenceEngine().run(data)
+            if result.target_entry.target == parent_birth_target
+        )
+        model = TimelineModel(
+            data=data,
+            traversal=traversal,
+            temporal_results={parent_birth_target: parent_birth_result},
+        )
+
+        layout = LayoutEngine().build(model)
+
+        placement = next(
+            placement
+            for placement in layout.person_placements
+            if placement.person_id == "I2"
+        )
+
+        self.assertIs(placement.x_start_kind, PositionKind.VISUAL_FALLBACK)
 
     def test_birth_fallback_uses_single_parent_x_start_with_visual_offset(self) -> None:
         from descendants_timeline.model.child_ref import ChildRef, ChildRelation
@@ -2629,6 +3550,36 @@ class LayoutEngineTests(unittest.TestCase):
         self.assertEqual(
             placement_I3.x_start, placement_I1.x_start + 2 * visual_offset
         )
+
+    def test_logical_x_origin_sets_root_x_start_kind_to_visual_fallback(self) -> None:
+        from descendants_timeline.layout.position_kind import PositionKind
+
+        root = Person(
+            person_id="I1",
+            display_name="Root",
+            gender=PersonGender.UNKNOWN,
+            event_refs=(),
+            parent_family_ids=(),
+            family_ids=(),
+        )
+        data = RawGenealogyData(
+            persons={"I1": root},
+            families={},
+            events={},
+            root_person_id="I1",
+        )
+        traversal = DescendanceTraversal().traverse(data, "I1")
+        model = TimelineModel(
+            data=data,
+            traversal=traversal,
+            temporal_results={},
+        )
+
+        layout = LayoutEngine().build(model)
+
+        placement = layout.person_placements[0]
+
+        self.assertIs(placement.x_start_kind, PositionKind.VISUAL_FALLBACK)
 
     def test_root_without_birth_uses_logical_x_origin(self) -> None:
         root = Person(

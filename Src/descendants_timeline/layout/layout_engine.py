@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from datetime import date
 
 from descendants_timeline.layout.marriage_node_placement import (
     MarriageNodePlacement,
@@ -11,6 +12,8 @@ from descendants_timeline.layout.remarriage_segment_placement import (
     RemarriageSegmentPlacement,
 )
 from descendants_timeline.layout.person_placement import PersonPlacement
+from descendants_timeline.layout.position_kind import PositionKind
+from descendants_timeline.layout.life_bar_kind import LifeBarKind
 from descendants_timeline.layout.timeline_layout import TimelineLayout
 from descendants_timeline.timeline.timeline_model import TimelineModel
 from descendants_timeline.layout.timeline_scale import TimelineScale
@@ -71,10 +74,16 @@ class LayoutEngine:
                 resolved_person_placements[spouse_index] = replace(
                     spouse,
                     x_start=descendant_x_start,
+                    x_start_kind=PositionKind.VISUAL_FALLBACK,
                     x_end=(
                         spouse.x_end
                         if spouse.x_end is not None
                         else descendant_x_start + self.LIFE_SPAN_OFFSET
+                    ),
+                    x_end_kind=(
+                        spouse.x_end_kind
+                        if spouse.x_end is not None
+                        else PositionKind.VISUAL_FALLBACK
                     ),
                 )
 
@@ -86,10 +95,16 @@ class LayoutEngine:
             resolved_person_placements[descendant_index] = replace(
                 descendant,
                 x_start=spouse_x_start,
+                x_start_kind=PositionKind.VISUAL_FALLBACK,
                 x_end=(
                     descendant.x_end
                     if descendant.x_end is not None
                     else spouse_x_start + self.LIFE_SPAN_OFFSET
+                ),
+                x_end_kind=(
+                    descendant.x_end_kind
+                    if descendant.x_end is not None
+                    else PositionKind.VISUAL_FALLBACK
                 ),
             )
 
@@ -102,10 +117,16 @@ class LayoutEngine:
             resolved_person_placements[row_index] = replace(
                 placement,
                 x_start=self.LOGICAL_X_ORIGIN,
+                x_start_kind=PositionKind.VISUAL_FALLBACK,
                 x_end=(
                     placement.x_end
                     if placement.x_end is not None
                     else self.LOGICAL_X_ORIGIN + self.LIFE_SPAN_OFFSET
+                ),
+                x_end_kind=(
+                    placement.x_end_kind
+                    if placement.x_end is not None
+                    else PositionKind.VISUAL_FALLBACK
                 ),
             )
 
@@ -144,10 +165,16 @@ class LayoutEngine:
                         resolved_person_placements[row_index] = replace(
                             child,
                             x_start=previous_x_start,
+                            x_start_kind=PositionKind.VISUAL_FALLBACK,
                             x_end=(
                                 child.x_end
                                 if child.x_end is not None
                                 else previous_x_start + self.LIFE_SPAN_OFFSET
+                            ),
+                            x_end_kind=(
+                                child.x_end_kind
+                                if child.x_end is not None
+                                else PositionKind.VISUAL_FALLBACK
                             ),
                         )
 
@@ -174,10 +201,16 @@ class LayoutEngine:
             resolved_person_placements[row_index] = replace(
                 placement,
                 x_start=marriage_x,
+                x_start_kind=PositionKind.VISUAL_FALLBACK,
                 x_end=(
                     placement.x_end
                     if placement.x_end is not None
                     else marriage_x + self.LIFE_SPAN_OFFSET
+                ),
+                x_end_kind=(
+                    placement.x_end_kind
+                    if placement.x_end is not None
+                    else PositionKind.VISUAL_FALLBACK
                 ),
             )
 
@@ -219,12 +252,44 @@ class LayoutEngine:
             resolved_person_placements[row_index] = replace(
                 placement,
                 x_start=child_x_start,
+                x_start_kind=PositionKind.VISUAL_FALLBACK,
                 x_end=(
                     placement.x_end
                     if placement.x_end is not None
                     else child_x_start + self.LIFE_SPAN_OFFSET
                 ),
+                x_end_kind=(
+                    placement.x_end_kind
+                    if placement.x_end is not None
+                    else PositionKind.VISUAL_FALLBACK
+                ),
             )
+
+        for row_index, placement in enumerate(resolved_person_placements):
+            if (
+                placement.x_start is not None
+                and placement.x_end is not None
+                and placement.x_start > placement.x_end
+                and placement.x_start_kind is not PositionKind.VISUAL_FALLBACK
+                and placement.x_end_kind is not PositionKind.VISUAL_FALLBACK
+            ):
+                resolved_person_placements[row_index] = replace(
+                    placement,
+                    life_bar_kind=LifeBarKind.REVERSED,
+                    short_bar_length=self.LIFE_SPAN_OFFSET / 2,
+                )
+            elif (
+                placement.x_start is not None
+                and placement.x_end is not None
+                and placement.x_start == placement.x_end
+                and placement.x_start_kind is not PositionKind.VISUAL_FALLBACK
+                and placement.x_end_kind is not PositionKind.VISUAL_FALLBACK
+            ):
+                resolved_person_placements[row_index] = replace(
+                    placement,
+                    life_bar_kind=LifeBarKind.ZERO_LENGTH,
+                    short_bar_length=self.LIFE_SPAN_OFFSET / 2,
+                )
 
         person_placements = tuple(resolved_person_placements)
 
@@ -311,20 +376,31 @@ class LayoutEngine:
         death_result = model.temporal_results.get(death_target)
 
         x_start = None
+        x_start_kind = PositionKind.REPRESENTATIVE
 
         if birth_result is not None:
             display_value = determine_display_value(birth_result)
             if display_value is not None:
                 x_start = scale.date_to_x(display_value)
+                if isinstance(birth_result.estimate.representative_value, date):
+                    x_start_kind = PositionKind.REPRESENTATIVE
+                else:
+                    x_start_kind = PositionKind.DOMAIN_DISPLAY
         x_end = None
+        x_end_kind = PositionKind.REPRESENTATIVE
 
         if death_result is not None:
             display_value = determine_display_value(death_result)
             if display_value is not None:
                 x_end = scale.date_to_x(display_value)
+                if isinstance(death_result.estimate.representative_value, date):
+                    x_end_kind = PositionKind.REPRESENTATIVE
+                else:
+                    x_end_kind = PositionKind.DOMAIN_DISPLAY
 
         if x_end is None and x_start is not None:
             x_end = x_start + self.LIFE_SPAN_OFFSET
+            x_end_kind = PositionKind.VISUAL_FALLBACK
 
         return PersonPlacement(
             person_id=row.person_id,
@@ -334,7 +410,9 @@ class LayoutEngine:
             family_id=row.family_id,
             spouse_of_person_id=row.spouse_of_person_id,
             x_start=x_start,
+            x_start_kind=x_start_kind,
             x_end=x_end,
+            x_end_kind=x_end_kind,
             y=(
                 self.DEFAULT_TOP_MARGIN
                 + row_index * self.DEFAULT_ROW_HEIGHT
