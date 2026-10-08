@@ -3870,5 +3870,1794 @@ class LayoutEngineTests(unittest.TestCase):
             self.assertEqual(placement.x, float(marriage_date.toordinal()))
         self.assertEqual(layout.remarriage_segment_placements, ())
 
+    def test_birth_hard_soft_conflict_creates_diagnostic_at_bar_start(self) -> None:
+        from descendants_timeline.inference.constraint_resolution import (
+            ConstraintConflictType,
+            ConstraintResolution,
+        )
+        from descendants_timeline.inference.resolved_bound import ResolvedBound
+        from descendants_timeline.inference.temporal_estimator import TemporalEstimator
+        from descendants_timeline.inference.temporal_inference_result import (
+            TemporalInferenceResult,
+        )
+        from descendants_timeline.inference.temporal_reconciler import TemporalReconciler
+        from descendants_timeline.layout.diagnostic_placement import DiagnosticPlacement
+        from descendants_timeline.model.temporal_constraint import (
+            ConstraintOperator,
+            ConstraintStrength,
+            TemporalConstraint,
+        )
+        from descendants_timeline.model.temporal_evidence import (
+            EvidenceOwnerType,
+            TemporalEvidence,
+        )
+        from descendants_timeline.model.temporal_target import (
+            TargetSemantic,
+            TemporalOwnerType,
+            TemporalTarget,
+        )
+        from descendants_timeline.model.temporal_target_entry import TemporalTargetEntry
+
+        birth_date = date(1840, 1, 1)
+        birth_value = TemporalValue(
+            source_value="01/01/1840",
+            source_calendar="GREGORIAN",
+            normalized_minimum=birth_date,
+            normalized_maximum=birth_date,
+            representative_value=birth_date,
+            value_origin=ValueOrigin.GRAMPS,
+            source_quality=SourceQuality.NORMAL,
+            evidence_status=EvidenceStatus.EVIDENCE_USABLE,
+            certainty=CertaintyLevel.CERTAIN,
+        )
+        root = Person(
+            person_id="I1",
+            display_name="Root",
+            gender=PersonGender.UNKNOWN,
+            event_refs=(PersonEventRef("E1", EventRoleSemantic.PRINCIPAL, "PRIMARY"),),
+            parent_family_ids=(),
+            family_ids=(),
+        )
+        birth = Event(
+            event_id="E1",
+            source_type="BIRTH",
+            semantic=EventSemantic.BIRTH,
+            date=birth_value,
+        )
+        data = RawGenealogyData(
+            persons={"I1": root},
+            families={},
+            events={"E1": birth},
+            root_person_id="I1",
+        )
+        target = TemporalTarget(
+            owner_type=TemporalOwnerType.PERSON,
+            owner_id="I1",
+            semantic=TargetSemantic.BIRTH,
+        )
+        evidence = TemporalEvidence(
+            owner_type=EvidenceOwnerType.PERSON,
+            owner_id="I1",
+            event_id="E1",
+            semantic=EventSemantic.BIRTH,
+            role=EventRoleSemantic.PRINCIPAL,
+            date=birth_value,
+            principal_owner_type=TemporalOwnerType.PERSON,
+            principal_owner_id="I1",
+        )
+        hard_constraint = TemporalConstraint(
+            target=target,
+            operator=ConstraintOperator.AFTER_OR_EQUAL,
+            bound=birth_date,
+            rule_id="test_hard_birth_minimum",
+            strength=ConstraintStrength.HARD,
+            evidences=(evidence,),
+        )
+        soft_constraint = TemporalConstraint(
+            target=target,
+            operator=ConstraintOperator.BEFORE_OR_EQUAL,
+            bound=date(1839, 1, 1),
+            rule_id="test_soft_birth_maximum",
+            strength=ConstraintStrength.SOFT,
+            evidences=(evidence,),
+        )
+        hard_minimum = ResolvedBound(
+            target=target,
+            value=birth_date,
+            operator=ConstraintOperator.AFTER_OR_EQUAL,
+            strength=ConstraintStrength.HARD,
+            constraints=(hard_constraint,),
+        )
+        resolution = ConstraintResolution(
+            target=target,
+            hard_minimum=hard_minimum,
+            hard_maximum=None,
+            refined_minimum=hard_minimum,
+            refined_maximum=None,
+            conflict_type=ConstraintConflictType.HARD_SOFT,
+            conflicting_constraints=(hard_constraint, soft_constraint),
+        )
+        domain = TemporalReconciler().reconcile(target, birth_value, resolution)
+        birth_result = TemporalInferenceResult(
+            target_entry=TemporalTargetEntry(
+                target=target,
+                gramps_value=birth_value,
+                anomalies=(),
+            ),
+            constraint_resolution=resolution,
+            reconciled_domain=domain,
+            estimate=TemporalEstimator().estimate(domain),
+            constraints=(hard_constraint, soft_constraint),
+        )
+        model = TimelineModel(
+            data=data,
+            traversal=DescendanceTraversal().traverse(data, "I1"),
+            temporal_results={target: birth_result},
+        )
+
+        layout = LayoutEngine().build(model)
+
+        person_placement = layout.person_placements[0]
+        self.assertEqual(person_placement.x_start, float(birth_date.toordinal()))
+        self.assertEqual(len(layout.diagnostic_placements), 1)
+        diagnostic = layout.diagnostic_placements[0]
+        self.assertIsInstance(diagnostic, DiagnosticPlacement)
+        self.assertEqual(diagnostic.target, target)
+        self.assertEqual(diagnostic.x, person_placement.x_start)
+        self.assertEqual(diagnostic.y, person_placement.y)
+
+    def test_birth_gramps_inference_conflict_creates_diagnostic(self) -> None:
+        from descendants_timeline.inference.constraint_resolution import (
+            ConstraintResolution,
+        )
+        from descendants_timeline.inference.reconciled_temporal_domain import (
+            ReconciliationConflictType,
+        )
+        from descendants_timeline.inference.resolved_bound import ResolvedBound
+        from descendants_timeline.inference.temporal_estimator import TemporalEstimator
+        from descendants_timeline.inference.temporal_inference_result import (
+            TemporalInferenceResult,
+        )
+        from descendants_timeline.inference.temporal_reconciler import TemporalReconciler
+        from descendants_timeline.layout.diagnostic_placement import DiagnosticPlacement
+        from descendants_timeline.model.temporal_constraint import (
+            ConstraintOperator,
+            ConstraintStrength,
+            TemporalConstraint,
+        )
+        from descendants_timeline.model.temporal_evidence import (
+            EvidenceOwnerType,
+            TemporalEvidence,
+        )
+        from descendants_timeline.model.temporal_target import (
+            TargetSemantic,
+            TemporalOwnerType,
+            TemporalTarget,
+        )
+        from descendants_timeline.model.temporal_target_entry import TemporalTargetEntry
+
+        birth_date = date(1840, 1, 1)
+        birth_value = TemporalValue(
+            source_value="avant le 01/01/1840",
+            source_calendar="GREGORIAN",
+            normalized_minimum=None,
+            normalized_maximum=birth_date,
+            representative_value=None,
+            value_origin=ValueOrigin.GRAMPS,
+            source_quality=SourceQuality.NORMAL,
+            evidence_status=EvidenceStatus.EVIDENCE_USABLE,
+            certainty=CertaintyLevel.UNDETERMINED,
+        )
+        root = Person(
+            person_id="I1",
+            display_name="Root",
+            gender=PersonGender.UNKNOWN,
+            event_refs=(PersonEventRef("E1", EventRoleSemantic.PRINCIPAL, "PRIMARY"),),
+            parent_family_ids=(),
+            family_ids=(),
+        )
+        birth = Event(
+            event_id="E1",
+            source_type="BIRTH",
+            semantic=EventSemantic.BIRTH,
+            date=birth_value,
+        )
+        data = RawGenealogyData(
+            persons={"I1": root},
+            families={},
+            events={"E1": birth},
+            root_person_id="I1",
+        )
+        target = TemporalTarget(
+            owner_type=TemporalOwnerType.PERSON,
+            owner_id="I1",
+            semantic=TargetSemantic.BIRTH,
+        )
+        evidence = TemporalEvidence(
+            owner_type=EvidenceOwnerType.PERSON,
+            owner_id="I1",
+            event_id="E1",
+            semantic=EventSemantic.BIRTH,
+            role=EventRoleSemantic.PRINCIPAL,
+            date=birth_value,
+            principal_owner_type=TemporalOwnerType.PERSON,
+            principal_owner_id="I1",
+        )
+        hard_constraint = TemporalConstraint(
+            target=target,
+            operator=ConstraintOperator.AFTER_OR_EQUAL,
+            bound=date(1841, 1, 1),
+            rule_id="test_hard_birth_minimum",
+            strength=ConstraintStrength.HARD,
+            evidences=(evidence,),
+        )
+        hard_minimum = ResolvedBound(
+            target=target,
+            value=date(1841, 1, 1),
+            operator=ConstraintOperator.AFTER_OR_EQUAL,
+            strength=ConstraintStrength.HARD,
+            constraints=(hard_constraint,),
+        )
+        resolution = ConstraintResolution(
+            target=target,
+            hard_minimum=hard_minimum,
+            hard_maximum=None,
+            refined_minimum=hard_minimum,
+            refined_maximum=None,
+            conflict_type=None,
+            conflicting_constraints=(),
+        )
+        domain = TemporalReconciler().reconcile(target, birth_value, resolution)
+        birth_result = TemporalInferenceResult(
+            target_entry=TemporalTargetEntry(
+                target=target,
+                gramps_value=birth_value,
+                anomalies=(),
+            ),
+            constraint_resolution=resolution,
+            reconciled_domain=domain,
+            estimate=TemporalEstimator().estimate(domain),
+            constraints=(hard_constraint,),
+        )
+        self.assertIsNone(birth_result.constraint_resolution.conflict_type)
+        self.assertIs(
+            birth_result.reconciled_domain.conflict_type,
+            ReconciliationConflictType.GRAMPS_INFERENCE,
+        )
+        self.assertIs(domain.constraint_resolution, resolution)
+        model = TimelineModel(
+            data=data,
+            traversal=DescendanceTraversal().traverse(data, "I1"),
+            temporal_results={target: birth_result},
+        )
+
+        layout = LayoutEngine().build(model)
+
+        person_placement = layout.person_placements[0]
+        self.assertEqual(person_placement.x_start, float(birth_date.toordinal()))
+        self.assertEqual(len(layout.diagnostic_placements), 1)
+        diagnostic = layout.diagnostic_placements[0]
+        self.assertIsInstance(diagnostic, DiagnosticPlacement)
+        self.assertEqual(diagnostic.target, target)
+        self.assertEqual(diagnostic.x, person_placement.x_start)
+        self.assertEqual(diagnostic.y, person_placement.y)
+
+    def test_birth_multiple_principal_events_creates_diagnostic(self) -> None:
+        from descendants_timeline.layout.diagnostic_placement import DiagnosticPlacement
+        from descendants_timeline.layout.position_kind import PositionKind
+        from descendants_timeline.model.temporal_target import (
+            TargetSemantic,
+            TemporalOwnerType,
+            TemporalTarget,
+        )
+        from descendants_timeline.model.temporal_target_anomaly import (
+            TemporalTargetAnomalyType,
+        )
+
+        unknown_birth = TemporalValue.unknown()
+        root = Person(
+            person_id="I1",
+            display_name="Root",
+            gender=PersonGender.UNKNOWN,
+            event_refs=(
+                PersonEventRef("E1", EventRoleSemantic.PRINCIPAL, "PRIMARY"),
+                PersonEventRef("E2", EventRoleSemantic.PRINCIPAL, "PRIMARY"),
+            ),
+            parent_family_ids=(),
+            family_ids=(),
+        )
+        events = {
+            event_id: Event(
+                event_id=event_id,
+                source_type="BIRTH",
+                semantic=EventSemantic.BIRTH,
+                date=unknown_birth,
+            )
+            for event_id in ("E1", "E2")
+        }
+        data = RawGenealogyData(
+            persons={"I1": root},
+            families={},
+            events=events,
+            root_person_id="I1",
+        )
+        target = TemporalTarget(
+            owner_type=TemporalOwnerType.PERSON,
+            owner_id="I1",
+            semantic=TargetSemantic.BIRTH,
+        )
+        birth_result = next(
+            result
+            for result in TemporalInferenceEngine().run(data)
+            if result.target_entry.target == target
+        )
+        self.assertEqual(len(birth_result.target_entry.anomalies), 1)
+        anomaly = birth_result.target_entry.anomalies[0]
+        self.assertIs(
+            anomaly.anomaly_type,
+            TemporalTargetAnomalyType.MULTIPLE_PRINCIPAL_EVENTS,
+        )
+        self.assertEqual(anomaly.event_ids, ("E1", "E2"))
+        self.assertIsNone(birth_result.constraint_resolution.conflict_type)
+        self.assertIsNone(birth_result.reconciled_domain.conflict_type)
+        self.assertIsNone(birth_result.estimate.representative_value)
+        self.assertIsNone(birth_result.reconciled_domain.principal_minimum)
+        self.assertIsNone(birth_result.reconciled_domain.principal_maximum)
+        model = TimelineModel(
+            data=data,
+            traversal=DescendanceTraversal().traverse(data, "I1"),
+            temporal_results={target: birth_result},
+        )
+
+        layout = LayoutEngine().build(model)
+
+        person_placement = layout.person_placements[0]
+        self.assertIsNotNone(person_placement.x_start)
+        self.assertEqual(person_placement.x_start, LayoutEngine.LOGICAL_X_ORIGIN)
+        self.assertIs(person_placement.x_start_kind, PositionKind.VISUAL_FALLBACK)
+        self.assertEqual(len(layout.diagnostic_placements), 1)
+        diagnostic = layout.diagnostic_placements[0]
+        self.assertIsInstance(diagnostic, DiagnosticPlacement)
+        self.assertEqual(diagnostic.target, target)
+        self.assertEqual(diagnostic.x, person_placement.x_start)
+        self.assertEqual(diagnostic.y, person_placement.y)
+
+    def test_death_conflict_creates_diagnostic_at_bar_end(self) -> None:
+        from descendants_timeline.inference.constraint_resolution import (
+            ConstraintConflictType,
+            ConstraintResolution,
+        )
+        from descendants_timeline.inference.resolved_bound import ResolvedBound
+        from descendants_timeline.inference.temporal_estimator import TemporalEstimator
+        from descendants_timeline.inference.temporal_inference_result import (
+            TemporalInferenceResult,
+        )
+        from descendants_timeline.inference.temporal_reconciler import TemporalReconciler
+        from descendants_timeline.layout.diagnostic_placement import DiagnosticPlacement
+        from descendants_timeline.layout.life_bar_kind import LifeBarKind
+        from descendants_timeline.model.temporal_constraint import (
+            ConstraintOperator,
+            ConstraintStrength,
+            TemporalConstraint,
+        )
+        from descendants_timeline.model.temporal_evidence import (
+            EvidenceOwnerType,
+            TemporalEvidence,
+        )
+        from descendants_timeline.model.temporal_target import (
+            TargetSemantic,
+            TemporalOwnerType,
+            TemporalTarget,
+        )
+        from descendants_timeline.model.temporal_target_entry import TemporalTargetEntry
+
+        birth_date = date(1840, 1, 1)
+        death_date = date(1900, 1, 1)
+        events = {}
+        for event_id, semantic, event_date in (
+            ("E1", EventSemantic.BIRTH, birth_date),
+            ("E2", EventSemantic.DEATH, death_date),
+        ):
+            events[event_id] = Event(
+                event_id=event_id,
+                source_type=semantic.value,
+                semantic=semantic,
+                date=TemporalValue(
+                    source_value=event_date.isoformat(),
+                    source_calendar="GREGORIAN",
+                    normalized_minimum=event_date,
+                    normalized_maximum=event_date,
+                    representative_value=event_date,
+                    value_origin=ValueOrigin.GRAMPS,
+                    source_quality=SourceQuality.NORMAL,
+                    evidence_status=EvidenceStatus.EVIDENCE_USABLE,
+                    certainty=CertaintyLevel.CERTAIN,
+                ),
+            )
+        root = Person(
+            person_id="I1",
+            display_name="Root",
+            gender=PersonGender.UNKNOWN,
+            event_refs=(
+                PersonEventRef("E1", EventRoleSemantic.PRINCIPAL, "PRIMARY"),
+                PersonEventRef("E2", EventRoleSemantic.PRINCIPAL, "PRIMARY"),
+            ),
+            parent_family_ids=(),
+            family_ids=(),
+        )
+        data = RawGenealogyData(
+            persons={"I1": root},
+            families={},
+            events=events,
+            root_person_id="I1",
+        )
+        birth_target = TemporalTarget(
+            owner_type=TemporalOwnerType.PERSON,
+            owner_id="I1",
+            semantic=TargetSemantic.BIRTH,
+        )
+        death_target = TemporalTarget(
+            owner_type=TemporalOwnerType.PERSON,
+            owner_id="I1",
+            semantic=TargetSemantic.DEATH,
+        )
+        birth_result = next(
+            result
+            for result in TemporalInferenceEngine().run(data)
+            if result.target_entry.target == birth_target
+        )
+        death_value = events["E2"].date
+        evidence = TemporalEvidence(
+            owner_type=EvidenceOwnerType.PERSON,
+            owner_id="I1",
+            event_id="E2",
+            semantic=EventSemantic.DEATH,
+            role=EventRoleSemantic.PRINCIPAL,
+            date=death_value,
+            principal_owner_type=TemporalOwnerType.PERSON,
+            principal_owner_id="I1",
+        )
+        hard_constraint = TemporalConstraint(
+            target=death_target,
+            operator=ConstraintOperator.AFTER_OR_EQUAL,
+            bound=death_date,
+            rule_id="test_hard_death_minimum",
+            strength=ConstraintStrength.HARD,
+            evidences=(evidence,),
+        )
+        soft_constraint = TemporalConstraint(
+            target=death_target,
+            operator=ConstraintOperator.BEFORE_OR_EQUAL,
+            bound=date(1899, 1, 1),
+            rule_id="test_soft_death_maximum",
+            strength=ConstraintStrength.SOFT,
+            evidences=(evidence,),
+        )
+        hard_minimum = ResolvedBound(
+            target=death_target,
+            value=death_date,
+            operator=ConstraintOperator.AFTER_OR_EQUAL,
+            strength=ConstraintStrength.HARD,
+            constraints=(hard_constraint,),
+        )
+        resolution = ConstraintResolution(
+            target=death_target,
+            hard_minimum=hard_minimum,
+            hard_maximum=None,
+            refined_minimum=hard_minimum,
+            refined_maximum=None,
+            conflict_type=ConstraintConflictType.HARD_SOFT,
+            conflicting_constraints=(hard_constraint, soft_constraint),
+        )
+        domain = TemporalReconciler().reconcile(death_target, death_value, resolution)
+        death_result = TemporalInferenceResult(
+            target_entry=TemporalTargetEntry(
+                target=death_target,
+                gramps_value=death_value,
+                anomalies=(),
+            ),
+            constraint_resolution=resolution,
+            reconciled_domain=domain,
+            estimate=TemporalEstimator().estimate(domain),
+            constraints=(hard_constraint, soft_constraint),
+        )
+        self.assertIs(
+            death_result.constraint_resolution.conflict_type,
+            ConstraintConflictType.HARD_SOFT,
+        )
+        self.assertIs(domain.constraint_resolution, resolution)
+        self.assertIsNone(death_result.reconciled_domain.conflict_type)
+        self.assertEqual(death_result.target_entry.anomalies, ())
+        self.assertIsNone(birth_result.constraint_resolution.conflict_type)
+        self.assertIsNone(birth_result.reconciled_domain.conflict_type)
+        self.assertEqual(birth_result.target_entry.anomalies, ())
+        model = TimelineModel(
+            data=data,
+            traversal=DescendanceTraversal().traverse(data, "I1"),
+            temporal_results={birth_target: birth_result, death_target: death_result},
+        )
+
+        layout = LayoutEngine().build(model)
+
+        person_placement = layout.person_placements[0]
+        self.assertIs(person_placement.life_bar_kind, LifeBarKind.NORMAL)
+        self.assertEqual(person_placement.x_start, float(birth_date.toordinal()))
+        self.assertIsNotNone(person_placement.bar_x_end)
+        self.assertEqual(person_placement.bar_x_end, float(death_date.toordinal()))
+        self.assertEqual(len(layout.diagnostic_placements), 1)
+        diagnostic = layout.diagnostic_placements[0]
+        self.assertIsInstance(diagnostic, DiagnosticPlacement)
+        self.assertEqual(diagnostic.target, death_target)
+        self.assertEqual(diagnostic.x, person_placement.bar_x_end)
+        self.assertEqual(diagnostic.y, person_placement.y)
+
+    def test_death_gramps_inference_conflict_creates_diagnostic(self) -> None:
+        from descendants_timeline.inference.constraint_resolution import (
+            ConstraintResolution,
+        )
+        from descendants_timeline.inference.reconciled_temporal_domain import (
+            ReconciliationConflictType,
+        )
+        from descendants_timeline.inference.resolved_bound import ResolvedBound
+        from descendants_timeline.inference.temporal_estimator import TemporalEstimator
+        from descendants_timeline.inference.temporal_inference_result import (
+            TemporalInferenceResult,
+        )
+        from descendants_timeline.inference.temporal_reconciler import TemporalReconciler
+        from descendants_timeline.layout.diagnostic_placement import DiagnosticPlacement
+        from descendants_timeline.layout.life_bar_kind import LifeBarKind
+        from descendants_timeline.model.temporal_constraint import (
+            ConstraintOperator,
+            ConstraintStrength,
+            TemporalConstraint,
+        )
+        from descendants_timeline.model.temporal_evidence import (
+            EvidenceOwnerType,
+            TemporalEvidence,
+        )
+        from descendants_timeline.model.temporal_target import (
+            TargetSemantic,
+            TemporalOwnerType,
+            TemporalTarget,
+        )
+        from descendants_timeline.model.temporal_target_entry import TemporalTargetEntry
+
+        birth_date = date(1840, 1, 1)
+        death_date = date(1900, 1, 1)
+        events = {}
+        for event_id, semantic, event_date in (
+            ("E1", EventSemantic.BIRTH, birth_date),
+            ("E2", EventSemantic.DEATH, death_date),
+        ):
+            events[event_id] = Event(
+                event_id=event_id,
+                source_type=semantic.value,
+                semantic=semantic,
+                date=TemporalValue(
+                    source_value=("après le " if semantic is EventSemantic.DEATH else "") + event_date.isoformat(),
+                    source_calendar="GREGORIAN",
+                    normalized_minimum=event_date,
+                    normalized_maximum=None if semantic is EventSemantic.DEATH else event_date,
+                    representative_value=None if semantic is EventSemantic.DEATH else event_date,
+                    value_origin=ValueOrigin.GRAMPS,
+                    source_quality=SourceQuality.NORMAL,
+                    evidence_status=EvidenceStatus.EVIDENCE_USABLE,
+                    certainty=CertaintyLevel.UNDETERMINED if semantic is EventSemantic.DEATH else CertaintyLevel.CERTAIN,
+                ),
+            )
+        root = Person(
+            person_id="I1",
+            display_name="Root",
+            gender=PersonGender.UNKNOWN,
+            event_refs=(
+                PersonEventRef("E1", EventRoleSemantic.PRINCIPAL, "PRIMARY"),
+                PersonEventRef("E2", EventRoleSemantic.PRINCIPAL, "PRIMARY"),
+            ),
+            parent_family_ids=(),
+            family_ids=(),
+        )
+        data = RawGenealogyData(
+            persons={"I1": root},
+            families={},
+            events=events,
+            root_person_id="I1",
+        )
+        birth_target = TemporalTarget(
+            owner_type=TemporalOwnerType.PERSON,
+            owner_id="I1",
+            semantic=TargetSemantic.BIRTH,
+        )
+        death_target = TemporalTarget(
+            owner_type=TemporalOwnerType.PERSON,
+            owner_id="I1",
+            semantic=TargetSemantic.DEATH,
+        )
+        birth_result = next(
+            result
+            for result in TemporalInferenceEngine().run(data)
+            if result.target_entry.target == birth_target
+        )
+        death_value = events["E2"].date
+        evidence = TemporalEvidence(
+            owner_type=EvidenceOwnerType.PERSON,
+            owner_id="I1",
+            event_id="E2",
+            semantic=EventSemantic.DEATH,
+            role=EventRoleSemantic.PRINCIPAL,
+            date=death_value,
+            principal_owner_type=TemporalOwnerType.PERSON,
+            principal_owner_id="I1",
+        )
+        hard_constraint = TemporalConstraint(
+            target=death_target,
+            operator=ConstraintOperator.BEFORE_OR_EQUAL,
+            bound=date(1899, 1, 1),
+            rule_id="test_hard_death_maximum",
+            strength=ConstraintStrength.HARD,
+            evidences=(evidence,),
+        )
+        hard_maximum = ResolvedBound(
+            target=death_target,
+            value=date(1899, 1, 1),
+            operator=ConstraintOperator.BEFORE_OR_EQUAL,
+            strength=ConstraintStrength.HARD,
+            constraints=(hard_constraint,),
+        )
+        resolution = ConstraintResolution(
+            target=death_target,
+            hard_minimum=None,
+            hard_maximum=hard_maximum,
+            refined_minimum=None,
+            refined_maximum=hard_maximum,
+            conflict_type=None,
+            conflicting_constraints=(),
+        )
+        domain = TemporalReconciler().reconcile(death_target, death_value, resolution)
+        death_result = TemporalInferenceResult(
+            target_entry=TemporalTargetEntry(
+                target=death_target,
+                gramps_value=death_value,
+                anomalies=(),
+            ),
+            constraint_resolution=resolution,
+            reconciled_domain=domain,
+            estimate=TemporalEstimator().estimate(domain),
+            constraints=(hard_constraint,),
+        )
+        self.assertIsNone(death_result.constraint_resolution.conflict_type)
+        self.assertIs(domain.constraint_resolution, resolution)
+        self.assertIs(
+            death_result.reconciled_domain.conflict_type,
+            ReconciliationConflictType.GRAMPS_INFERENCE,
+        )
+        self.assertEqual(death_result.target_entry.anomalies, ())
+        self.assertIsNone(birth_result.constraint_resolution.conflict_type)
+        self.assertIsNone(birth_result.reconciled_domain.conflict_type)
+        self.assertEqual(birth_result.target_entry.anomalies, ())
+        model = TimelineModel(
+            data=data,
+            traversal=DescendanceTraversal().traverse(data, "I1"),
+            temporal_results={birth_target: birth_result, death_target: death_result},
+        )
+
+        layout = LayoutEngine().build(model)
+
+        person_placement = layout.person_placements[0]
+        self.assertIs(person_placement.life_bar_kind, LifeBarKind.NORMAL)
+        self.assertEqual(person_placement.x_start, float(birth_date.toordinal()))
+        self.assertIsNotNone(person_placement.bar_x_end)
+        self.assertEqual(person_placement.bar_x_end, float(death_date.toordinal()))
+        self.assertEqual(len(layout.diagnostic_placements), 1)
+        diagnostic = layout.diagnostic_placements[0]
+        self.assertIsInstance(diagnostic, DiagnosticPlacement)
+        self.assertEqual(diagnostic.target, death_target)
+        self.assertEqual(diagnostic.x, person_placement.bar_x_end)
+        self.assertEqual(diagnostic.y, person_placement.y)
+
+    def test_death_multiple_principal_events_creates_diagnostic(self) -> None:
+        from descendants_timeline.inference.rule_engine import RuleEngine
+        from descendants_timeline.layout.diagnostic_placement import DiagnosticPlacement
+        from descendants_timeline.layout.position_kind import PositionKind
+        from descendants_timeline.model.temporal_target import (
+            TargetSemantic,
+            TemporalOwnerType,
+            TemporalTarget,
+        )
+        from descendants_timeline.model.temporal_target_anomaly import (
+            TemporalTargetAnomalyType,
+        )
+
+        birth_date = date(1840, 1, 1)
+        birth_value = TemporalValue(
+            source_value="01/01/1840",
+            source_calendar="GREGORIAN",
+            normalized_minimum=birth_date,
+            normalized_maximum=birth_date,
+            representative_value=birth_date,
+            value_origin=ValueOrigin.GRAMPS,
+            source_quality=SourceQuality.NORMAL,
+            evidence_status=EvidenceStatus.EVIDENCE_USABLE,
+            certainty=CertaintyLevel.CERTAIN,
+        )
+        root = Person(
+            person_id="I1",
+            display_name="Root",
+            gender=PersonGender.UNKNOWN,
+            event_refs=(
+                PersonEventRef("E1", EventRoleSemantic.PRINCIPAL, "PRIMARY"),
+                PersonEventRef("E2", EventRoleSemantic.PRINCIPAL, "PRIMARY"),
+                PersonEventRef("E3", EventRoleSemantic.PRINCIPAL, "PRIMARY"),
+            ),
+            parent_family_ids=(),
+            family_ids=(),
+        )
+        events = {
+            "E1": Event(
+                event_id="E1",
+                source_type="BIRTH",
+                semantic=EventSemantic.BIRTH,
+                date=birth_value,
+            ),
+        }
+        for event_id in ("E2", "E3"):
+            events[event_id] = Event(
+                event_id=event_id,
+                source_type="DEATH",
+                semantic=EventSemantic.DEATH,
+                date=TemporalValue.unknown(),
+            )
+        data = RawGenealogyData(
+            persons={"I1": root},
+            families={},
+            events=events,
+            root_person_id="I1",
+        )
+        death_target = TemporalTarget(
+            owner_type=TemporalOwnerType.PERSON,
+            owner_id="I1",
+            semantic=TargetSemantic.DEATH,
+        )
+        # Aucune règle ne fournit de date inférée : on isole le fallback du layout.
+        results = TemporalInferenceEngine(rule_engine=RuleEngine(rules=())).run(data)
+        results_by_target = {result.target_entry.target: result for result in results}
+        death_result = results_by_target[death_target]
+        self.assertEqual(len(death_result.target_entry.anomalies), 1)
+        anomaly = death_result.target_entry.anomalies[0]
+        self.assertIs(
+            anomaly.anomaly_type,
+            TemporalTargetAnomalyType.MULTIPLE_PRINCIPAL_EVENTS,
+        )
+        self.assertEqual(anomaly.event_ids, ("E2", "E3"))
+        for result in results:
+            self.assertIsNone(result.constraint_resolution.conflict_type)
+            self.assertIsNone(result.reconciled_domain.conflict_type)
+            if result is not death_result:
+                self.assertEqual(result.target_entry.anomalies, ())
+        self.assertIs(
+            death_result.reconciled_domain.constraint_resolution,
+            death_result.constraint_resolution,
+        )
+        self.assertIsNone(death_result.estimate.representative_value)
+        self.assertIsNone(death_result.reconciled_domain.principal_minimum)
+        self.assertIsNone(death_result.reconciled_domain.principal_maximum)
+        model = TimelineModel(
+            data=data,
+            traversal=DescendanceTraversal().traverse(data, "I1"),
+            temporal_results=results_by_target,
+        )
+
+        layout = LayoutEngine().build(model)
+
+        person_placement = layout.person_placements[0]
+        self.assertEqual(person_placement.x_start, float(birth_date.toordinal()))
+        self.assertIsNotNone(person_placement.bar_x_end)
+        self.assertEqual(
+            person_placement.bar_x_end,
+            person_placement.x_start + LayoutEngine.LIFE_SPAN_OFFSET,
+        )
+        self.assertIs(person_placement.x_end_kind, PositionKind.VISUAL_FALLBACK)
+        self.assertEqual(len(layout.diagnostic_placements), 1)
+        diagnostic = layout.diagnostic_placements[0]
+        self.assertIsInstance(diagnostic, DiagnosticPlacement)
+        self.assertEqual(diagnostic.target, death_target)
+        self.assertEqual(diagnostic.x, person_placement.bar_x_end)
+        self.assertEqual(diagnostic.y, person_placement.y)
+
+    def test_marriage_conflict_creates_diagnostic_at_marriage_node(self) -> None:
+        from descendants_timeline.inference.constraint_resolution import (
+            ConstraintConflictType,
+            ConstraintResolution,
+        )
+        from descendants_timeline.inference.resolved_bound import ResolvedBound
+        from descendants_timeline.inference.temporal_estimator import TemporalEstimator
+        from descendants_timeline.inference.temporal_inference_result import (
+            TemporalInferenceResult,
+        )
+        from descendants_timeline.inference.temporal_reconciler import TemporalReconciler
+        from descendants_timeline.layout.diagnostic_placement import DiagnosticPlacement
+        from descendants_timeline.layout.temporal_display_value import determine_display_value
+        from descendants_timeline.model.temporal_constraint import (
+            ConstraintOperator,
+            ConstraintStrength,
+            TemporalConstraint,
+        )
+        from descendants_timeline.model.temporal_evidence import (
+            EvidenceOwnerType,
+            TemporalEvidence,
+        )
+        from descendants_timeline.model.temporal_target import (
+            TargetSemantic,
+            TemporalOwnerType,
+            TemporalTarget,
+        )
+        from descendants_timeline.model.temporal_target_entry import TemporalTargetEntry
+
+        marriage_date = date(1870, 1, 1)
+        marriage_value = TemporalValue(
+            source_value="01/01/1870",
+            source_calendar="GREGORIAN",
+            normalized_minimum=marriage_date,
+            normalized_maximum=marriage_date,
+            representative_value=marriage_date,
+            value_origin=ValueOrigin.GRAMPS,
+            source_quality=SourceQuality.NORMAL,
+            evidence_status=EvidenceStatus.EVIDENCE_USABLE,
+            certainty=CertaintyLevel.CERTAIN,
+        )
+        persons = {
+            person_id: Person(
+                person_id=person_id,
+                display_name=person_id,
+                gender=PersonGender.UNKNOWN,
+                event_refs=(),
+                parent_family_ids=(),
+                family_ids=("F1",),
+            )
+            for person_id in ("I1", "I2")
+        }
+        family = Family(
+            family_id="F1",
+            parent1_id="I1",
+            parent2_id="I2",
+            event_refs=(FamilyEventRef("E1", FamilyRoleSemantic.FAMILY, "FAMILY"),),
+            child_refs=(),
+        )
+        marriage = Event(
+            event_id="E1",
+            source_type="MARRIAGE",
+            semantic=EventSemantic.MARRIAGE,
+            date=marriage_value,
+        )
+        data = RawGenealogyData(
+            persons=persons,
+            families={"F1": family},
+            events={"E1": marriage},
+            root_person_id="I1",
+        )
+        target = TemporalTarget(
+            owner_type=TemporalOwnerType.FAMILY,
+            owner_id="F1",
+            semantic=TargetSemantic.MARRIAGE,
+        )
+        evidence = TemporalEvidence(
+            owner_type=EvidenceOwnerType.FAMILY,
+            owner_id="F1",
+            event_id="E1",
+            semantic=EventSemantic.MARRIAGE,
+            role=FamilyRoleSemantic.FAMILY,
+            date=marriage_value,
+            principal_owner_type=TemporalOwnerType.FAMILY,
+            principal_owner_id="F1",
+        )
+        hard_constraint = TemporalConstraint(
+            target=target,
+            operator=ConstraintOperator.AFTER_OR_EQUAL,
+            bound=marriage_date,
+            rule_id="test_hard_marriage_minimum",
+            strength=ConstraintStrength.HARD,
+            evidences=(evidence,),
+        )
+        soft_constraint = TemporalConstraint(
+            target=target,
+            operator=ConstraintOperator.BEFORE_OR_EQUAL,
+            bound=date(1869, 1, 1),
+            rule_id="test_soft_marriage_maximum",
+            strength=ConstraintStrength.SOFT,
+            evidences=(evidence,),
+        )
+        hard_minimum = ResolvedBound(
+            target=target,
+            value=marriage_date,
+            operator=ConstraintOperator.AFTER_OR_EQUAL,
+            strength=ConstraintStrength.HARD,
+            constraints=(hard_constraint,),
+        )
+        resolution = ConstraintResolution(
+            target=target,
+            hard_minimum=hard_minimum,
+            hard_maximum=None,
+            refined_minimum=hard_minimum,
+            refined_maximum=None,
+            conflict_type=ConstraintConflictType.HARD_SOFT,
+            conflicting_constraints=(hard_constraint, soft_constraint),
+        )
+        domain = TemporalReconciler().reconcile(target, marriage_value, resolution)
+        marriage_result = TemporalInferenceResult(
+            target_entry=TemporalTargetEntry(
+                target=target,
+                gramps_value=marriage_value,
+                anomalies=(),
+            ),
+            constraint_resolution=resolution,
+            reconciled_domain=domain,
+            estimate=TemporalEstimator().estimate(domain),
+            constraints=(hard_constraint, soft_constraint),
+        )
+        results_by_target = {
+            result.target_entry.target: result
+            for result in TemporalInferenceEngine().run(data)
+        }
+        results_by_target[target] = marriage_result
+        self.assertIs(
+            marriage_result.constraint_resolution.conflict_type,
+            ConstraintConflictType.HARD_SOFT,
+        )
+        self.assertIs(domain.constraint_resolution, resolution)
+        self.assertIsNone(marriage_result.reconciled_domain.conflict_type)
+        self.assertEqual(marriage_result.target_entry.anomalies, ())
+        self.assertEqual(determine_display_value(marriage_result), marriage_date)
+        for result_target, result in results_by_target.items():
+            if result_target != target:
+                self.assertIsNone(result.constraint_resolution.conflict_type)
+                self.assertIsNone(result.reconciled_domain.conflict_type)
+                self.assertEqual(result.target_entry.anomalies, ())
+        model = TimelineModel(
+            data=data,
+            traversal=DescendanceTraversal().traverse(data, "I1"),
+            temporal_results=results_by_target,
+        )
+
+        layout = LayoutEngine().build(model)
+
+        self.assertEqual(len(layout.marriage_node_placements), 1)
+        marriage_node = layout.marriage_node_placements[0]
+        self.assertEqual(marriage_node.family_id, "F1")
+        self.assertEqual(marriage_node.x, float(marriage_date.toordinal()))
+        self.assertEqual(len(layout.diagnostic_placements), 1)
+        diagnostic = layout.diagnostic_placements[0]
+        self.assertIsInstance(diagnostic, DiagnosticPlacement)
+        self.assertEqual(diagnostic.target, target)
+        self.assertEqual(diagnostic.x, marriage_node.x)
+        self.assertEqual(diagnostic.y, marriage_node.y)
+
+    def test_marriage_gramps_inference_conflict_creates_diagnostic(self) -> None:
+        from descendants_timeline.inference.constraint_resolution import (
+            ConstraintResolution,
+        )
+        from descendants_timeline.inference.reconciled_temporal_domain import (
+            ReconciliationConflictType,
+        )
+        from descendants_timeline.inference.resolved_bound import ResolvedBound
+        from descendants_timeline.inference.temporal_estimator import TemporalEstimator
+        from descendants_timeline.inference.temporal_inference_result import (
+            TemporalInferenceResult,
+        )
+        from descendants_timeline.inference.temporal_reconciler import TemporalReconciler
+        from descendants_timeline.layout.diagnostic_placement import DiagnosticPlacement
+        from descendants_timeline.layout.temporal_display_value import determine_display_value
+        from descendants_timeline.model.temporal_constraint import (
+            ConstraintOperator,
+            ConstraintStrength,
+            TemporalConstraint,
+        )
+        from descendants_timeline.model.temporal_evidence import (
+            EvidenceOwnerType,
+            TemporalEvidence,
+        )
+        from descendants_timeline.model.temporal_target import (
+            TargetSemantic,
+            TemporalOwnerType,
+            TemporalTarget,
+        )
+        from descendants_timeline.model.temporal_target_entry import TemporalTargetEntry
+
+        marriage_date = date(1870, 1, 1)
+        marriage_value = TemporalValue(
+            source_value="avant le 01/01/1870",
+            source_calendar="GREGORIAN",
+            normalized_minimum=None,
+            normalized_maximum=marriage_date,
+            representative_value=None,
+            value_origin=ValueOrigin.GRAMPS,
+            source_quality=SourceQuality.NORMAL,
+            evidence_status=EvidenceStatus.EVIDENCE_USABLE,
+            certainty=CertaintyLevel.UNDETERMINED,
+        )
+        persons = {
+            person_id: Person(
+                person_id=person_id,
+                display_name=person_id,
+                gender=PersonGender.UNKNOWN,
+                event_refs=(),
+                parent_family_ids=(),
+                family_ids=("F1",),
+            )
+            for person_id in ("I1", "I2")
+        }
+        family = Family(
+            family_id="F1",
+            parent1_id="I1",
+            parent2_id="I2",
+            event_refs=(FamilyEventRef("E1", FamilyRoleSemantic.FAMILY, "FAMILY"),),
+            child_refs=(),
+        )
+        marriage = Event(
+            event_id="E1",
+            source_type="MARRIAGE",
+            semantic=EventSemantic.MARRIAGE,
+            date=marriage_value,
+        )
+        data = RawGenealogyData(
+            persons=persons,
+            families={"F1": family},
+            events={"E1": marriage},
+            root_person_id="I1",
+        )
+        target = TemporalTarget(
+            owner_type=TemporalOwnerType.FAMILY,
+            owner_id="F1",
+            semantic=TargetSemantic.MARRIAGE,
+        )
+        evidence = TemporalEvidence(
+            owner_type=EvidenceOwnerType.FAMILY,
+            owner_id="F1",
+            event_id="E1",
+            semantic=EventSemantic.MARRIAGE,
+            role=FamilyRoleSemantic.FAMILY,
+            date=marriage_value,
+            principal_owner_type=TemporalOwnerType.FAMILY,
+            principal_owner_id="F1",
+        )
+        hard_constraint = TemporalConstraint(
+            target=target,
+            operator=ConstraintOperator.AFTER_OR_EQUAL,
+            bound=date(1871, 1, 1),
+            rule_id="test_hard_marriage_minimum",
+            strength=ConstraintStrength.HARD,
+            evidences=(evidence,),
+        )
+        hard_minimum = ResolvedBound(
+            target=target,
+            value=date(1871, 1, 1),
+            operator=ConstraintOperator.AFTER_OR_EQUAL,
+            strength=ConstraintStrength.HARD,
+            constraints=(hard_constraint,),
+        )
+        resolution = ConstraintResolution(
+            target=target,
+            hard_minimum=hard_minimum,
+            hard_maximum=None,
+            refined_minimum=hard_minimum,
+            refined_maximum=None,
+            conflict_type=None,
+            conflicting_constraints=(),
+        )
+        domain = TemporalReconciler().reconcile(target, marriage_value, resolution)
+        marriage_result = TemporalInferenceResult(
+            target_entry=TemporalTargetEntry(
+                target=target,
+                gramps_value=marriage_value,
+                anomalies=(),
+            ),
+            constraint_resolution=resolution,
+            reconciled_domain=domain,
+            estimate=TemporalEstimator().estimate(domain),
+            constraints=(hard_constraint,),
+        )
+        results_by_target = {
+            result.target_entry.target: result
+            for result in TemporalInferenceEngine().run(data)
+        }
+        results_by_target[target] = marriage_result
+        self.assertIsNone(marriage_result.constraint_resolution.conflict_type)
+        self.assertIs(domain.constraint_resolution, resolution)
+        self.assertIs(
+            marriage_result.reconciled_domain.conflict_type,
+            ReconciliationConflictType.GRAMPS_INFERENCE,
+        )
+        self.assertEqual(marriage_result.target_entry.anomalies, ())
+        self.assertEqual(determine_display_value(marriage_result), marriage_date)
+        for result_target, result in results_by_target.items():
+            if result_target != target:
+                self.assertIsNone(result.constraint_resolution.conflict_type)
+                self.assertIsNone(result.reconciled_domain.conflict_type)
+                self.assertEqual(result.target_entry.anomalies, ())
+        model = TimelineModel(
+            data=data,
+            traversal=DescendanceTraversal().traverse(data, "I1"),
+            temporal_results=results_by_target,
+        )
+
+        layout = LayoutEngine().build(model)
+
+        self.assertEqual(len(layout.marriage_node_placements), 1)
+        marriage_node = layout.marriage_node_placements[0]
+        self.assertEqual(marriage_node.family_id, "F1")
+        self.assertEqual(marriage_node.x, float(marriage_date.toordinal()))
+        self.assertEqual(len(layout.diagnostic_placements), 1)
+        diagnostic = layout.diagnostic_placements[0]
+        self.assertIsInstance(diagnostic, DiagnosticPlacement)
+        self.assertEqual(diagnostic.target, target)
+        self.assertEqual(diagnostic.x, marriage_node.x)
+        self.assertEqual(diagnostic.y, marriage_node.y)
+
+    def test_marriage_multiple_principal_events_creates_diagnostic(self) -> None:
+        from descendants_timeline.inference.reconciled_temporal_domain import (
+            ReconciledBoundOrigin,
+        )
+        from descendants_timeline.layout.diagnostic_placement import DiagnosticPlacement
+        from descendants_timeline.layout.temporal_display_value import determine_display_value
+        from descendants_timeline.model.temporal_target import (
+            TargetSemantic,
+            TemporalOwnerType,
+            TemporalTarget,
+        )
+        from descendants_timeline.model.temporal_target_anomaly import (
+            TemporalTargetAnomalyType,
+        )
+
+        birth_date = date(1840, 1, 1)
+        birth = Event(
+            event_id="E1",
+            source_type="BIRTH",
+            semantic=EventSemantic.BIRTH,
+            date=TemporalValue(
+                source_value="01/01/1840",
+                source_calendar="GREGORIAN",
+                normalized_minimum=birth_date,
+                normalized_maximum=birth_date,
+                representative_value=birth_date,
+                value_origin=ValueOrigin.GRAMPS,
+                source_quality=SourceQuality.NORMAL,
+                evidence_status=EvidenceStatus.EVIDENCE_USABLE,
+                certainty=CertaintyLevel.CERTAIN,
+            ),
+        )
+        persons = {
+            person_id: Person(
+                person_id=person_id,
+                display_name=person_id,
+                gender=PersonGender.UNKNOWN,
+                event_refs=(
+                    (PersonEventRef("E1", EventRoleSemantic.PRINCIPAL, "PRIMARY"),)
+                    if person_id == "I1" else ()
+                ),
+                parent_family_ids=(),
+                family_ids=("F1",),
+            )
+            for person_id in ("I1", "I2")
+        }
+        family = Family(
+            family_id="F1",
+            parent1_id="I1",
+            parent2_id="I2",
+            event_refs=(
+                FamilyEventRef("E2", FamilyRoleSemantic.FAMILY, "FAMILY"),
+                FamilyEventRef("E3", FamilyRoleSemantic.FAMILY, "FAMILY"),
+            ),
+            child_refs=(),
+        )
+        events = {"E1": birth}
+        for event_id in ("E2", "E3"):
+            events[event_id] = Event(
+                event_id=event_id,
+                source_type="MARRIAGE",
+                semantic=EventSemantic.MARRIAGE,
+                date=TemporalValue.unknown(),
+            )
+        data = RawGenealogyData(
+            persons=persons,
+            families={"F1": family},
+            events=events,
+            root_person_id="I1",
+        )
+        target = TemporalTarget(
+            owner_type=TemporalOwnerType.FAMILY,
+            owner_id="F1",
+            semantic=TargetSemantic.MARRIAGE,
+        )
+        results = TemporalInferenceEngine().run(data)
+        results_by_target = {result.target_entry.target: result for result in results}
+        marriage_result = results_by_target[target]
+        self.assertEqual(len(marriage_result.target_entry.anomalies), 1)
+        anomaly = marriage_result.target_entry.anomalies[0]
+        self.assertIs(
+            anomaly.anomaly_type,
+            TemporalTargetAnomalyType.MULTIPLE_PRINCIPAL_EVENTS,
+        )
+        self.assertEqual(anomaly.event_ids, ("E2", "E3"))
+        self.assertIs(
+            marriage_result.target_entry.gramps_value.value_origin,
+            ValueOrigin.UNKNOWN,
+        )
+        for result in results:
+            self.assertIsNone(result.constraint_resolution.conflict_type)
+            self.assertIsNone(result.reconciled_domain.conflict_type)
+            if result is not marriage_result:
+                self.assertEqual(result.target_entry.anomalies, ())
+        self.assertIs(
+            marriage_result.reconciled_domain.constraint_resolution,
+            marriage_result.constraint_resolution,
+        )
+        minimum = marriage_result.reconciled_domain.principal_minimum
+        self.assertIsNotNone(minimum)
+        self.assertIs(minimum.origin, ReconciledBoundOrigin.INFERENCE)
+        display_value = determine_display_value(marriage_result)
+        self.assertIsNotNone(display_value)
+        model = TimelineModel(
+            data=data,
+            traversal=DescendanceTraversal().traverse(data, "I1"),
+            temporal_results=results_by_target,
+        )
+
+        layout = LayoutEngine().build(model)
+
+        self.assertEqual(len(layout.marriage_node_placements), 1)
+        marriage_node = layout.marriage_node_placements[0]
+        self.assertEqual(marriage_node.family_id, "F1")
+        self.assertEqual(marriage_node.x, float(display_value.toordinal()))
+        self.assertEqual(len(layout.diagnostic_placements), 1)
+        diagnostic = layout.diagnostic_placements[0]
+        self.assertIsInstance(diagnostic, DiagnosticPlacement)
+        self.assertEqual(diagnostic.target, target)
+        self.assertEqual(diagnostic.x, marriage_node.x)
+        self.assertEqual(diagnostic.y, marriage_node.y)
+
+    def test_marriage_anomaly_without_node_uses_shared_life_bar_interval(self) -> None:
+        from descendants_timeline.inference.rule_engine import RuleEngine
+        from descendants_timeline.layout.diagnostic_placement import DiagnosticPlacement
+        from descendants_timeline.layout.temporal_display_value import determine_display_value
+        from descendants_timeline.model.temporal_target import (
+            TargetSemantic,
+            TemporalOwnerType,
+            TemporalTarget,
+        )
+        from descendants_timeline.model.temporal_target_anomaly import (
+            TemporalTargetAnomalyType,
+        )
+
+        events = {}
+        persons = {}
+        for person_id, birth_id, death_id, birth_date, death_date in (
+            ("I1", "E1", "E2", date(1840, 1, 1), date(1900, 1, 1)),
+            ("I2", "E3", "E4", date(1850, 1, 1), date(1910, 1, 1)),
+        ):
+            persons[person_id] = Person(
+                person_id=person_id,
+                display_name=person_id,
+                gender=PersonGender.UNKNOWN,
+                event_refs=(
+                    PersonEventRef(birth_id, EventRoleSemantic.PRINCIPAL, "PRIMARY"),
+                    PersonEventRef(death_id, EventRoleSemantic.PRINCIPAL, "PRIMARY"),
+                ),
+                parent_family_ids=(),
+                family_ids=("F1",),
+            )
+            for event_id, semantic, event_date in (
+                (birth_id, EventSemantic.BIRTH, birth_date),
+                (death_id, EventSemantic.DEATH, death_date),
+            ):
+                events[event_id] = Event(
+                    event_id=event_id,
+                    source_type=semantic.value,
+                    semantic=semantic,
+                    date=TemporalValue(
+                        source_value=event_date.isoformat(),
+                        source_calendar="GREGORIAN",
+                        normalized_minimum=event_date,
+                        normalized_maximum=event_date,
+                        representative_value=event_date,
+                        value_origin=ValueOrigin.GRAMPS,
+                        source_quality=SourceQuality.NORMAL,
+                        evidence_status=EvidenceStatus.EVIDENCE_USABLE,
+                        certainty=CertaintyLevel.CERTAIN,
+                    ),
+                )
+        for event_id in ("E5", "E6"):
+            events[event_id] = Event(
+                event_id=event_id,
+                source_type="MARRIAGE",
+                semantic=EventSemantic.MARRIAGE,
+                date=TemporalValue.unknown(),
+            )
+        family = Family(
+            family_id="F1",
+            parent1_id="I1",
+            parent2_id="I2",
+            event_refs=(
+                FamilyEventRef("E5", FamilyRoleSemantic.FAMILY, "FAMILY"),
+                FamilyEventRef("E6", FamilyRoleSemantic.FAMILY, "FAMILY"),
+            ),
+            child_refs=(),
+        )
+        data = RawGenealogyData(
+            persons=persons,
+            families={"F1": family},
+            events=events,
+            root_person_id="I1",
+        )
+        target = TemporalTarget(
+            owner_type=TemporalOwnerType.FAMILY,
+            owner_id="F1",
+            semantic=TargetSemantic.MARRIAGE,
+        )
+        # Isoler le placement graphique sans inférer de borne de mariage.
+        results = TemporalInferenceEngine(rule_engine=RuleEngine(rules=())).run(data)
+        results_by_target = {result.target_entry.target: result for result in results}
+        marriage_result = results_by_target[target]
+        self.assertEqual(len(marriage_result.target_entry.anomalies), 1)
+        anomaly = marriage_result.target_entry.anomalies[0]
+        self.assertIs(
+            anomaly.anomaly_type,
+            TemporalTargetAnomalyType.MULTIPLE_PRINCIPAL_EVENTS,
+        )
+        self.assertEqual(anomaly.event_ids, ("E5", "E6"))
+        self.assertIs(
+            marriage_result.target_entry.gramps_value.value_origin,
+            ValueOrigin.UNKNOWN,
+        )
+        self.assertIsNone(marriage_result.estimate.representative_value)
+        self.assertIsNone(determine_display_value(marriage_result))
+        for result in results:
+            self.assertIsNone(result.constraint_resolution.conflict_type)
+            self.assertIsNone(result.reconciled_domain.conflict_type)
+            if result is not marriage_result:
+                self.assertEqual(result.target_entry.anomalies, ())
+        traversal = DescendanceTraversal().traverse(data, "I1")
+        self.assertEqual(persons["I1"].family_ids, ("F1",))
+        self.assertEqual(len(traversal.family_occurrences), 1)
+        occurrence = traversal.family_occurrences[0]
+        self.assertEqual(occurrence.family_id, "F1")
+        self.assertEqual(occurrence.descendant_person_id, "I1")
+        self.assertEqual(occurrence.spouse_person_id, "I2")
+        model = TimelineModel(
+            data=data,
+            traversal=traversal,
+            temporal_results=results_by_target,
+        )
+
+        layout = LayoutEngine().build(model)
+
+        self.assertEqual(layout.marriage_node_placements, ())
+        descendant = layout.person_placements[occurrence.descendant_row_index]
+        spouse = layout.person_placements[occurrence.spouse_row_index]
+        for placement in (descendant, spouse):
+            self.assertIsNotNone(placement.bar_x_start)
+            self.assertIsNotNone(placement.bar_x_end)
+        shared_start = max(descendant.bar_x_start, spouse.bar_x_start)
+        shared_end = min(descendant.bar_x_end, spouse.bar_x_end)
+        self.assertLess(shared_start, shared_end)
+        expected_x = (shared_start + shared_end) / 2
+        expected_y = (descendant.y + spouse.y) / 2
+        self.assertEqual(len(layout.diagnostic_placements), 1)
+        diagnostic = layout.diagnostic_placements[0]
+        self.assertIsInstance(diagnostic, DiagnosticPlacement)
+        self.assertEqual(diagnostic.target, target)
+        self.assertEqual(diagnostic.x, expected_x)
+        self.assertEqual(diagnostic.y, expected_y)
+        self.assertIsNone(determine_display_value(marriage_result))
+        self.assertIsNone(marriage_result.estimate.representative_value)
+
+    def test_remarriage_anomaly_without_node_uses_descendant_bar_bottom(self) -> None:
+        from descendants_timeline.inference.rule_engine import RuleEngine
+        from descendants_timeline.layout.diagnostic_placement import DiagnosticPlacement
+        from descendants_timeline.layout.temporal_display_value import determine_display_value
+        from descendants_timeline.model.temporal_target import (
+            TargetSemantic,
+            TemporalOwnerType,
+            TemporalTarget,
+        )
+        from descendants_timeline.model.temporal_target_anomaly import (
+            TemporalTargetAnomalyType,
+        )
+
+        events = {}
+        persons = {}
+        for person_id, birth_id, death_id, birth_date, death_date in (
+            ("P1", "E1", "E2", date(1840, 1, 1), date(1900, 1, 1)),
+            ("P3", "E3", "E4", date(1850, 1, 1), date(1910, 1, 1)),
+        ):
+            persons[person_id] = Person(
+                person_id=person_id,
+                display_name=person_id,
+                gender=PersonGender.UNKNOWN,
+                event_refs=(
+                    PersonEventRef(birth_id, EventRoleSemantic.PRINCIPAL, "PRIMARY"),
+                    PersonEventRef(death_id, EventRoleSemantic.PRINCIPAL, "PRIMARY"),
+                ),
+                parent_family_ids=(),
+                family_ids=("F1", "F2") if person_id == "P1" else ("F2",),
+            )
+            for event_id, semantic, event_date in (
+                (birth_id, EventSemantic.BIRTH, birth_date),
+                (death_id, EventSemantic.DEATH, death_date),
+            ):
+                events[event_id] = Event(
+                    event_id=event_id,
+                    source_type=semantic.value,
+                    semantic=semantic,
+                    date=TemporalValue(
+                        source_value=event_date.isoformat(),
+                        source_calendar="GREGORIAN",
+                        normalized_minimum=event_date,
+                        normalized_maximum=event_date,
+                        representative_value=event_date,
+                        value_origin=ValueOrigin.GRAMPS,
+                        source_quality=SourceQuality.NORMAL,
+                        evidence_status=EvidenceStatus.EVIDENCE_USABLE,
+                        certainty=CertaintyLevel.CERTAIN,
+                    ),
+                )
+        for event_id in ("E5", "E6"):
+            events[event_id] = Event(
+                event_id=event_id,
+                source_type="MARRIAGE",
+                semantic=EventSemantic.MARRIAGE,
+                date=TemporalValue.unknown(),
+            )
+        persons["P2"] = Person(
+            person_id="P2",
+            display_name="First spouse",
+            gender=PersonGender.UNKNOWN,
+            event_refs=(),
+            parent_family_ids=(),
+            family_ids=("F1",),
+        )
+        first_family = Family(
+            family_id="F1",
+            parent1_id="P1",
+            parent2_id="P2",
+            event_refs=(),
+            child_refs=(),
+        )
+        family = Family(
+            family_id="F2",
+            parent1_id="P1",
+            parent2_id="P3",
+            event_refs=(
+                FamilyEventRef("E5", FamilyRoleSemantic.FAMILY, "FAMILY"),
+                FamilyEventRef("E6", FamilyRoleSemantic.FAMILY, "FAMILY"),
+            ),
+            child_refs=(),
+        )
+        data = RawGenealogyData(
+            persons=persons,
+            families={"F1": first_family, "F2": family},
+            events=events,
+            root_person_id="P1",
+        )
+        target = TemporalTarget(
+            owner_type=TemporalOwnerType.FAMILY,
+            owner_id="F2",
+            semantic=TargetSemantic.MARRIAGE,
+        )
+        # Isoler le placement graphique sans inférer de borne de mariage.
+        results = TemporalInferenceEngine(rule_engine=RuleEngine(rules=())).run(data)
+        results_by_target = {result.target_entry.target: result for result in results}
+        marriage_result = results_by_target[target]
+        self.assertEqual(len(marriage_result.target_entry.anomalies), 1)
+        anomaly = marriage_result.target_entry.anomalies[0]
+        self.assertIs(
+            anomaly.anomaly_type,
+            TemporalTargetAnomalyType.MULTIPLE_PRINCIPAL_EVENTS,
+        )
+        self.assertEqual(anomaly.event_ids, ("E5", "E6"))
+        self.assertIs(
+            marriage_result.target_entry.gramps_value.value_origin,
+            ValueOrigin.UNKNOWN,
+        )
+        self.assertIsNone(marriage_result.estimate.representative_value)
+        self.assertIsNone(determine_display_value(marriage_result))
+        for result in results:
+            self.assertIsNone(result.constraint_resolution.conflict_type)
+            self.assertIsNone(result.reconciled_domain.conflict_type)
+            if result is not marriage_result:
+                self.assertEqual(result.target_entry.anomalies, ())
+        traversal = DescendanceTraversal().traverse(data, "P1")
+        self.assertEqual(persons["P1"].family_ids, ("F1", "F2"))
+        self.assertEqual(
+            tuple(item.family_id for item in traversal.family_occurrences),
+            ("F1", "F2"),
+        )
+        occurrence = traversal.family_occurrences[1]
+        self.assertEqual(occurrence.family_id, "F2")
+        self.assertEqual(occurrence.descendant_person_id, "P1")
+        self.assertEqual(occurrence.spouse_person_id, "P3")
+        model = TimelineModel(
+            data=data,
+            traversal=traversal,
+            temporal_results=results_by_target,
+        )
+
+        layout = LayoutEngine().build(model)
+
+        self.assertEqual(layout.marriage_node_placements, ())
+        descendant = layout.person_placements[occurrence.descendant_row_index]
+        spouse = layout.person_placements[occurrence.spouse_row_index]
+        for placement in (descendant, spouse):
+            self.assertIsNotNone(placement.bar_x_start)
+            self.assertIsNotNone(placement.bar_x_end)
+        shared_start = max(descendant.bar_x_start, spouse.bar_x_start)
+        shared_end = min(descendant.bar_x_end, spouse.bar_x_end)
+        self.assertLess(shared_start, shared_end)
+        expected_x = (shared_start + shared_end) / 2
+        expected_y = descendant.y
+        diagnostics = tuple(
+            diagnostic for diagnostic in layout.diagnostic_placements
+            if diagnostic.target == target
+        )
+        self.assertEqual(len(diagnostics), 1)
+        diagnostic = diagnostics[0]
+        self.assertIsInstance(diagnostic, DiagnosticPlacement)
+        self.assertEqual(diagnostic.target, target)
+        self.assertEqual(diagnostic.x, expected_x)
+        self.assertEqual(diagnostic.y, expected_y)
+        self.assertIsNone(determine_display_value(marriage_result))
+        self.assertIsNone(marriage_result.estimate.representative_value)
+
+    def test_marriage_anomaly_without_node_disjoint_bars_uses_descendant_midpoint(self) -> None:
+        from descendants_timeline.inference.rule_engine import RuleEngine
+        from descendants_timeline.layout.diagnostic_placement import DiagnosticPlacement
+        from descendants_timeline.layout.temporal_display_value import determine_display_value
+        from descendants_timeline.model.temporal_target import (
+            TargetSemantic,
+            TemporalOwnerType,
+            TemporalTarget,
+        )
+        from descendants_timeline.model.temporal_target_anomaly import (
+            TemporalTargetAnomalyType,
+        )
+
+        events = {}
+        persons = {}
+        for person_id, birth_id, death_id, birth_date, death_date in (
+            ("I1", "E1", "E2", date(1840, 1, 1), date(1900, 1, 1)),
+            ("I2", "E3", "E4", date(1910, 1, 1), date(1970, 1, 1)),
+        ):
+            persons[person_id] = Person(
+                person_id=person_id,
+                display_name=person_id,
+                gender=PersonGender.UNKNOWN,
+                event_refs=(
+                    PersonEventRef(birth_id, EventRoleSemantic.PRINCIPAL, "PRIMARY"),
+                    PersonEventRef(death_id, EventRoleSemantic.PRINCIPAL, "PRIMARY"),
+                ),
+                parent_family_ids=(),
+                family_ids=("F1",),
+            )
+            for event_id, semantic, event_date in (
+                (birth_id, EventSemantic.BIRTH, birth_date),
+                (death_id, EventSemantic.DEATH, death_date),
+            ):
+                events[event_id] = Event(
+                    event_id=event_id,
+                    source_type=semantic.value,
+                    semantic=semantic,
+                    date=TemporalValue(
+                        source_value=event_date.isoformat(),
+                        source_calendar="GREGORIAN",
+                        normalized_minimum=event_date,
+                        normalized_maximum=event_date,
+                        representative_value=event_date,
+                        value_origin=ValueOrigin.GRAMPS,
+                        source_quality=SourceQuality.NORMAL,
+                        evidence_status=EvidenceStatus.EVIDENCE_USABLE,
+                        certainty=CertaintyLevel.CERTAIN,
+                    ),
+                )
+        for event_id in ("E5", "E6"):
+            events[event_id] = Event(
+                event_id=event_id,
+                source_type="MARRIAGE",
+                semantic=EventSemantic.MARRIAGE,
+                date=TemporalValue.unknown(),
+            )
+        family = Family(
+            family_id="F1",
+            parent1_id="I1",
+            parent2_id="I2",
+            event_refs=(
+                FamilyEventRef("E5", FamilyRoleSemantic.FAMILY, "FAMILY"),
+                FamilyEventRef("E6", FamilyRoleSemantic.FAMILY, "FAMILY"),
+            ),
+            child_refs=(),
+        )
+        data = RawGenealogyData(
+            persons=persons,
+            families={"F1": family},
+            events=events,
+            root_person_id="I1",
+        )
+        target = TemporalTarget(
+            owner_type=TemporalOwnerType.FAMILY,
+            owner_id="F1",
+            semantic=TargetSemantic.MARRIAGE,
+        )
+        # Isoler le placement graphique sans inférer de borne de mariage.
+        results = TemporalInferenceEngine(rule_engine=RuleEngine(rules=())).run(data)
+        results_by_target = {result.target_entry.target: result for result in results}
+        marriage_result = results_by_target[target]
+        self.assertEqual(len(marriage_result.target_entry.anomalies), 1)
+        anomaly = marriage_result.target_entry.anomalies[0]
+        self.assertIs(
+            anomaly.anomaly_type,
+            TemporalTargetAnomalyType.MULTIPLE_PRINCIPAL_EVENTS,
+        )
+        self.assertEqual(anomaly.event_ids, ("E5", "E6"))
+        self.assertIs(
+            marriage_result.target_entry.gramps_value.value_origin,
+            ValueOrigin.UNKNOWN,
+        )
+        self.assertIsNone(marriage_result.estimate.representative_value)
+        self.assertIsNone(determine_display_value(marriage_result))
+        for result in results:
+            self.assertIsNone(result.constraint_resolution.conflict_type)
+            self.assertIsNone(result.reconciled_domain.conflict_type)
+            if result is not marriage_result:
+                self.assertEqual(result.target_entry.anomalies, ())
+        traversal = DescendanceTraversal().traverse(data, "I1")
+        self.assertEqual(persons["I1"].family_ids, ("F1",))
+        self.assertEqual(len(traversal.family_occurrences), 1)
+        occurrence = traversal.family_occurrences[0]
+        self.assertEqual(occurrence.family_id, "F1")
+        self.assertEqual(occurrence.descendant_person_id, "I1")
+        self.assertEqual(occurrence.spouse_person_id, "I2")
+        model = TimelineModel(
+            data=data,
+            traversal=traversal,
+            temporal_results=results_by_target,
+        )
+
+        layout = LayoutEngine().build(model)
+
+        self.assertEqual(layout.marriage_node_placements, ())
+        descendant = layout.person_placements[occurrence.descendant_row_index]
+        spouse = layout.person_placements[occurrence.spouse_row_index]
+        for placement in (descendant, spouse):
+            self.assertIsNotNone(placement.bar_x_start)
+            self.assertIsNotNone(placement.bar_x_end)
+        shared_start = max(descendant.bar_x_start, spouse.bar_x_start)
+        shared_end = min(descendant.bar_x_end, spouse.bar_x_end)
+        self.assertGreater(shared_start, shared_end)
+        expected_x = (descendant.bar_x_start + descendant.bar_x_end) / 2
+        expected_y = (descendant.y + spouse.y) / 2
+        diagnostics = tuple(
+            diagnostic for diagnostic in layout.diagnostic_placements
+            if diagnostic.target == target
+        )
+        self.assertEqual(len(diagnostics), 1)
+        diagnostic = diagnostics[0]
+        self.assertIsInstance(diagnostic, DiagnosticPlacement)
+        self.assertEqual(diagnostic.target, target)
+        self.assertEqual(diagnostic.x, expected_x)
+        self.assertEqual(diagnostic.y, expected_y)
+        self.assertIsNone(determine_display_value(marriage_result))
+        self.assertIsNone(marriage_result.estimate.representative_value)
+
+    def test_marriage_anomaly_without_node_uses_only_available_descendant_bar(self) -> None:
+        from descendants_timeline.layout.diagnostic_placement import DiagnosticPlacement
+        from descendants_timeline.layout.position_kind import PositionKind
+        from descendants_timeline.layout.temporal_display_value import determine_display_value
+        from descendants_timeline.model.temporal_target import (
+            TargetSemantic,
+            TemporalOwnerType,
+            TemporalTarget,
+        )
+        from descendants_timeline.model.temporal_target_anomaly import (
+            TemporalTargetAnomalyType,
+        )
+
+        persons = {
+            person_id: Person(
+                person_id=person_id,
+                display_name=person_id,
+                gender=PersonGender.UNKNOWN,
+                event_refs=(),
+                parent_family_ids=(),
+                family_ids=("F1",),
+            )
+            for person_id in ("I1", "I2")
+        }
+        events = {
+            event_id: Event(
+                event_id=event_id,
+                source_type="MARRIAGE",
+                semantic=EventSemantic.MARRIAGE,
+                date=TemporalValue.unknown(),
+            )
+            for event_id in ("E1", "E2")
+        }
+        family = Family(
+            family_id="F1",
+            parent1_id="I1",
+            parent2_id="I2",
+            event_refs=(
+                FamilyEventRef("E1", FamilyRoleSemantic.FAMILY, "FAMILY"),
+                FamilyEventRef("E2", FamilyRoleSemantic.FAMILY, "FAMILY"),
+            ),
+            child_refs=(),
+        )
+        data = RawGenealogyData(
+            persons=persons,
+            families={"F1": family},
+            events=events,
+            root_person_id="I1",
+        )
+        target = TemporalTarget(
+            owner_type=TemporalOwnerType.FAMILY,
+            owner_id="F1",
+            semantic=TargetSemantic.MARRIAGE,
+        )
+        results = TemporalInferenceEngine().run(data)
+        results_by_target = {result.target_entry.target: result for result in results}
+        marriage_result = results_by_target[target]
+        self.assertEqual(len(marriage_result.target_entry.anomalies), 1)
+        anomaly = marriage_result.target_entry.anomalies[0]
+        self.assertIs(
+            anomaly.anomaly_type,
+            TemporalTargetAnomalyType.MULTIPLE_PRINCIPAL_EVENTS,
+        )
+        self.assertEqual(anomaly.event_ids, ("E1", "E2"))
+        self.assertIsNone(determine_display_value(marriage_result))
+        for result in results:
+            self.assertIsNone(result.constraint_resolution.conflict_type)
+            self.assertIsNone(result.reconciled_domain.conflict_type)
+            if result is not marriage_result:
+                self.assertEqual(result.target_entry.anomalies, ())
+                self.assertIsNone(determine_display_value(result))
+        traversal = DescendanceTraversal().traverse(data, "I1")
+        self.assertEqual(persons["I1"].family_ids, ("F1",))
+        self.assertEqual(len(traversal.family_occurrences), 1)
+        occurrence = traversal.family_occurrences[0]
+        self.assertEqual(occurrence.family_id, "F1")
+        self.assertEqual(occurrence.descendant_person_id, "I1")
+        self.assertEqual(occurrence.spouse_person_id, "I2")
+        model = TimelineModel(
+            data=data,
+            traversal=traversal,
+            temporal_results=results_by_target,
+        )
+
+        layout = LayoutEngine().build(model)
+
+        self.assertEqual(layout.marriage_node_placements, ())
+        descendant = layout.person_placements[occurrence.descendant_row_index]
+        spouse = layout.person_placements[occurrence.spouse_row_index]
+        self.assertEqual(descendant.person_id, "I1")
+        self.assertIsNotNone(descendant.bar_x_start)
+        self.assertIsNotNone(descendant.bar_x_end)
+        self.assertEqual(descendant.bar_x_start, LayoutEngine.LOGICAL_X_ORIGIN)
+        self.assertEqual(
+            descendant.bar_x_end,
+            descendant.bar_x_start + LayoutEngine.LIFE_SPAN_OFFSET,
+        )
+        self.assertIs(descendant.x_start_kind, PositionKind.VISUAL_FALLBACK)
+        self.assertIs(descendant.x_end_kind, PositionKind.VISUAL_FALLBACK)
+        self.assertEqual(spouse.person_id, "I2")
+        self.assertIsNone(spouse.bar_x_start)
+        self.assertIsNone(spouse.bar_x_end)
+        expected_x = (descendant.bar_x_start + descendant.bar_x_end) / 2
+        expected_y = (descendant.y + spouse.y) / 2
+        diagnostics = tuple(
+            diagnostic for diagnostic in layout.diagnostic_placements
+            if diagnostic.target == target
+        )
+        self.assertEqual(len(diagnostics), 1)
+        diagnostic = diagnostics[0]
+        self.assertIsInstance(diagnostic, DiagnosticPlacement)
+        self.assertEqual(diagnostic.target, target)
+        self.assertEqual(diagnostic.x, expected_x)
+        self.assertEqual(diagnostic.y, expected_y)
+
 if __name__ == "__main__":
     unittest.main()

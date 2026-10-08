@@ -17,6 +17,15 @@ class TimelineLayoutTests(unittest.TestCase):
         self.assertEqual(layout.marriage_node_placements, ())
         self.assertEqual(layout.remarriage_segment_placements, ())
 
+    def test_diagnostic_placements_default_to_empty_tuple(self) -> None:
+        layout = TimelineLayout(
+            person_placements=(),
+            marriage_node_placements=(),
+            remarriage_segment_placements=(),
+        )
+
+        self.assertEqual(layout.diagnostic_placements, ())
+
     def test_person_placements_must_be_tuple(self) -> None:
         with self.assertRaisesRegex(
             TypeError,

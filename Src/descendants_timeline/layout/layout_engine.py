@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import date
 
+from descendants_timeline.layout.diagnostic_placement import DiagnosticPlacement
 from descendants_timeline.layout.marriage_node_placement import (
     MarriageNodePlacement,
 )
@@ -348,10 +349,150 @@ class LayoutEngine:
                 )
             family_ids.add(marriage.family_id)
 
+        diagnostic_placements = []
+        for placement in person_placements:
+            if placement.x_start is None:
+                continue
+            birth_target = TemporalTarget(
+                owner_type=TemporalOwnerType.PERSON,
+                owner_id=placement.person_id,
+                semantic=TargetSemantic.BIRTH,
+            )
+            birth_result = model.temporal_results.get(birth_target)
+            if (
+                birth_result is not None
+                and (
+                    birth_result.constraint_resolution.conflict_type is not None
+                    or birth_result.reconciled_domain.conflict_type is not None
+                    or bool(birth_result.target_entry.anomalies)
+                )
+            ):
+                diagnostic_placements.append(
+                    DiagnosticPlacement(
+                        target=birth_target,
+                        x=placement.x_start,
+                        y=placement.y,
+                    )
+                )
+
+        for placement in person_placements:
+            if placement.bar_x_end is None:
+                continue
+            death_target = TemporalTarget(
+                owner_type=TemporalOwnerType.PERSON,
+                owner_id=placement.person_id,
+                semantic=TargetSemantic.DEATH,
+            )
+            death_result = model.temporal_results.get(death_target)
+            if (
+                death_result is not None
+                and (
+                    death_result.constraint_resolution.conflict_type is not None
+                    or death_result.reconciled_domain.conflict_type is not None
+                    or bool(death_result.target_entry.anomalies)
+                )
+            ):
+                diagnostic_placements.append(
+                    DiagnosticPlacement(
+                        target=death_target,
+                        x=placement.bar_x_end,
+                        y=placement.y,
+                    )
+                )
+
+        for marriage_node in marriage_node_placements:
+            marriage_target = TemporalTarget(
+                owner_type=TemporalOwnerType.FAMILY,
+                owner_id=marriage_node.family_id,
+                semantic=TargetSemantic.MARRIAGE,
+            )
+            marriage_result = model.temporal_results.get(marriage_target)
+            if (
+                marriage_result is not None
+                and (
+                    marriage_result.constraint_resolution.conflict_type is not None
+                    or marriage_result.reconciled_domain.conflict_type is not None
+                    or bool(marriage_result.target_entry.anomalies)
+                )
+            ):
+                diagnostic_placements.append(
+                    DiagnosticPlacement(
+                        target=marriage_target,
+                        x=marriage_node.x,
+                        y=marriage_node.y,
+                    )
+                )
+
+        marriage_node_occurrences = {
+            (node.family_id, node.descendant_row_index, node.spouse_row_index)
+            for node in marriage_node_placements
+        }
+        for occurrence in model.traversal.family_occurrences:
+            if (
+                occurrence.spouse_person_id is None
+                or occurrence.spouse_row_index is None
+                or (
+                    occurrence.family_id,
+                    occurrence.descendant_row_index,
+                    occurrence.spouse_row_index,
+                ) in marriage_node_occurrences
+            ):
+                continue
+            marriage_target = TemporalTarget(
+                owner_type=TemporalOwnerType.FAMILY,
+                owner_id=occurrence.family_id,
+                semantic=TargetSemantic.MARRIAGE,
+            )
+            marriage_result = model.temporal_results.get(marriage_target)
+            if marriage_result is None or not (
+                marriage_result.constraint_resolution.conflict_type is not None
+                or marriage_result.reconciled_domain.conflict_type is not None
+                or bool(marriage_result.target_entry.anomalies)
+            ):
+                continue
+            descendant = person_placements[occurrence.descendant_row_index]
+            spouse = person_placements[occurrence.spouse_row_index]
+            descendant_complete = (
+                descendant.bar_x_start is not None
+                and descendant.bar_x_end is not None
+            )
+            spouse_complete = (
+                spouse.bar_x_start is not None
+                and spouse.bar_x_end is not None
+            )
+            if descendant_complete and spouse_complete:
+                shared_start = max(descendant.bar_x_start, spouse.bar_x_start)
+                shared_end = min(descendant.bar_x_end, spouse.bar_x_end)
+                diagnostic_x = (
+                    (shared_start + shared_end) / 2
+                    if shared_start <= shared_end
+                    else (descendant.bar_x_start + descendant.bar_x_end) / 2
+                )
+            elif descendant_complete:
+                diagnostic_x = (descendant.bar_x_start + descendant.bar_x_end) / 2
+            elif spouse_complete:
+                diagnostic_x = (spouse.bar_x_start + spouse.bar_x_end) / 2
+            else:
+                continue
+            family_ids = model.data.persons[occurrence.descendant_person_id].family_ids
+            diagnostic_y = (
+                (descendant.y + spouse.y) / 2
+                if occurrence.family_id == family_ids[0]
+                else descendant.y
+            )
+            diagnostic_placements.append(
+                DiagnosticPlacement(
+                    target=marriage_target,
+                    x=diagnostic_x,
+                    y=diagnostic_y,
+                )
+            )
+
         return TimelineLayout(
             person_placements=person_placements,
             marriage_node_placements=tuple(marriage_node_placements),
             remarriage_segment_placements=tuple(remarriage_segment_placements),
+            diagnostic_placements=tuple(diagnostic_placements),
         )
 
     def _build_person_placement(
