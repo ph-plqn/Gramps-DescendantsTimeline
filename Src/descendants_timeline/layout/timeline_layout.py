@@ -5,6 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from descendants_timeline.layout.diagnostic_placement import DiagnosticPlacement
+from descendants_timeline.layout.divorce_node_placement import (
+    DivorceNodePlacement,
+)
 from descendants_timeline.layout.marriage_node_placement import (
     MarriageNodePlacement,
 )
@@ -22,6 +25,7 @@ class TimelineLayout:
     marriage_node_placements: tuple[MarriageNodePlacement, ...]
     remarriage_segment_placements: tuple[RemarriageSegmentPlacement, ...]
     diagnostic_placements: tuple[DiagnosticPlacement, ...] = ()
+    divorce_node_placements: tuple[DivorceNodePlacement, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.person_placements, tuple):

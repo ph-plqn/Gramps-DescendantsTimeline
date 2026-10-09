@@ -6,6 +6,9 @@ from dataclasses import replace
 from datetime import date
 
 from descendants_timeline.layout.diagnostic_placement import DiagnosticPlacement
+from descendants_timeline.layout.divorce_node_placement import (
+    DivorceNodePlacement,
+)
 from descendants_timeline.layout.marriage_node_placement import (
     MarriageNodePlacement,
 )
@@ -41,6 +44,8 @@ class LayoutEngine:
     LIFE_SPAN_OFFSET = 3650.0
     # Distance géométrique sur l'axe X, sans signification temporelle.
     VISUAL_OFFSET = 365.0
+    # Décalage graphique provisoire en coordonnées logiques, sans sens temporel.
+    DIVORCE_DIAGNOSTIC_OFFSET = 30.0
     # Origine géométrique sur l'axe X, sans signification temporelle.
     LOGICAL_X_ORIGIN = 0.0
 
@@ -330,6 +335,44 @@ class LayoutEngine:
                 )
             )
 
+        divorce_node_placements = []
+        for occurrence in model.traversal.family_occurrences:
+            if (
+                occurrence.descendant_person_id is None
+                or occurrence.descendant_row_index is None
+                or occurrence.spouse_person_id is None
+                or occurrence.spouse_row_index is None
+            ):
+                continue
+
+            divorce_target = TemporalTarget(
+                owner_type=TemporalOwnerType.FAMILY,
+                owner_id=occurrence.family_id,
+                semantic=TargetSemantic.DIVORCE,
+            )
+            divorce_result = model.temporal_results.get(divorce_target)
+            if divorce_result is None:
+                continue
+            display_value = determine_display_value(divorce_result)
+            if display_value is None:
+                continue
+
+            descendant_y = person_placements[occurrence.descendant_row_index].y
+            spouse_y = person_placements[occurrence.spouse_row_index].y
+            divorce_node_placements.append(
+                DivorceNodePlacement(
+                    family_id=occurrence.family_id,
+                    descendant_person_id=occurrence.descendant_person_id,
+                    spouse_person_id=occurrence.spouse_person_id,
+                    descendant_row_index=occurrence.descendant_row_index,
+                    spouse_row_index=occurrence.spouse_row_index,
+                    x=scale.date_to_x(
+                        display_value
+                    ),
+                    y=(descendant_y + spouse_y) / 2.0,
+                )
+            )
+
         remarriage_segment_placements = []
         married_family_ids_by_person = {}
         for marriage in marriage_node_placements:
@@ -423,32 +466,74 @@ class LayoutEngine:
                     )
                 )
 
+        for divorce_node in divorce_node_placements:
+            divorce_target = TemporalTarget(
+                owner_type=TemporalOwnerType.FAMILY,
+                owner_id=divorce_node.family_id,
+                semantic=TargetSemantic.DIVORCE,
+            )
+            divorce_result = model.temporal_results.get(divorce_target)
+            if (
+                divorce_result is not None
+                and (
+                    divorce_result.constraint_resolution.conflict_type is not None
+                    or divorce_result.reconciled_domain.conflict_type is not None
+                    or bool(divorce_result.target_entry.anomalies)
+                )
+            ):
+                diagnostic_placements.append(
+                    DiagnosticPlacement(
+                        target=divorce_target,
+                        x=divorce_node.x,
+                        y=divorce_node.y,
+                    )
+                )
+
         marriage_node_occurrences = {
             (node.family_id, node.descendant_row_index, node.spouse_row_index)
             for node in marriage_node_placements
         }
+        divorce_node_occurrences = {
+            (node.family_id, node.descendant_row_index, node.spouse_row_index)
+            for node in divorce_node_placements
+        }
         for occurrence in model.traversal.family_occurrences:
             if (
-                occurrence.spouse_person_id is None
+                occurrence.descendant_person_id is None
+                or occurrence.descendant_row_index is None
+                or occurrence.spouse_person_id is None
                 or occurrence.spouse_row_index is None
-                or (
-                    occurrence.family_id,
-                    occurrence.descendant_row_index,
-                    occurrence.spouse_row_index,
-                ) in marriage_node_occurrences
             ):
                 continue
-            marriage_target = TemporalTarget(
-                owner_type=TemporalOwnerType.FAMILY,
-                owner_id=occurrence.family_id,
-                semantic=TargetSemantic.MARRIAGE,
+            occurrence_key = (
+                occurrence.family_id,
+                occurrence.descendant_row_index,
+                occurrence.spouse_row_index,
             )
-            marriage_result = model.temporal_results.get(marriage_target)
-            if marriage_result is None or not (
-                marriage_result.constraint_resolution.conflict_type is not None
-                or marriage_result.reconciled_domain.conflict_type is not None
-                or bool(marriage_result.target_entry.anomalies)
+            diagnostic_targets = []
+            for semantic, node_occurrences, offset in (
+                (TargetSemantic.MARRIAGE, marriage_node_occurrences, 0.0),
+                (
+                    TargetSemantic.DIVORCE,
+                    divorce_node_occurrences,
+                    self.DIVORCE_DIAGNOSTIC_OFFSET,
+                ),
             ):
+                if occurrence_key in node_occurrences:
+                    continue
+                target = TemporalTarget(
+                    owner_type=TemporalOwnerType.FAMILY,
+                    owner_id=occurrence.family_id,
+                    semantic=semantic,
+                )
+                result = model.temporal_results.get(target)
+                if result is not None and (
+                    result.constraint_resolution.conflict_type is not None
+                    or result.reconciled_domain.conflict_type is not None
+                    or bool(result.target_entry.anomalies)
+                ):
+                    diagnostic_targets.append((target, offset))
+            if not diagnostic_targets:
                 continue
             descendant = person_placements[occurrence.descendant_row_index]
             spouse = person_placements[occurrence.spouse_row_index]
@@ -480,19 +565,21 @@ class LayoutEngine:
                 if occurrence.family_id == family_ids[0]
                 else descendant.y
             )
-            diagnostic_placements.append(
-                DiagnosticPlacement(
-                    target=marriage_target,
-                    x=diagnostic_x,
-                    y=diagnostic_y,
+            for target, offset in diagnostic_targets:
+                diagnostic_placements.append(
+                    DiagnosticPlacement(
+                        target=target,
+                        x=diagnostic_x + offset,
+                        y=diagnostic_y,
+                    )
                 )
-            )
 
         return TimelineLayout(
             person_placements=person_placements,
             marriage_node_placements=tuple(marriage_node_placements),
             remarriage_segment_placements=tuple(remarriage_segment_placements),
             diagnostic_placements=tuple(diagnostic_placements),
+            divorce_node_placements=tuple(divorce_node_placements),
         )
 
     def _build_person_placement(
