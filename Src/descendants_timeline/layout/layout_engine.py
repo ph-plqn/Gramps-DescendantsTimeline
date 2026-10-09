@@ -5,6 +5,9 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import date
 
+from descendants_timeline.layout.branch_reference_placement import (
+    BranchReferencePlacement,
+)
 from descendants_timeline.layout.diagnostic_placement import DiagnosticPlacement
 from descendants_timeline.layout.divorce_node_placement import (
     DivorceNodePlacement,
@@ -51,6 +54,12 @@ class LayoutEngine:
 
     def build(self, model: TimelineModel) -> TimelineLayout:
         scale = TimelineScale()
+        reference_spouse_row_indices = tuple(
+            occurrence.spouse_row_index
+            for occurrence in model.traversal.family_occurrences
+            if occurrence.state is FamilyTraversalState.ALREADY_DESCRIBED
+            and occurrence.spouse_row_index is not None
+        )
 
         person_placements = tuple(
             self._build_person_placement(
@@ -58,6 +67,10 @@ class LayoutEngine:
                 scale=scale,
                 row=row,
                 row_index=row_index,
+                visual_rank=row_index + sum(
+                    spouse_row_index < row_index
+                    for spouse_row_index in reference_spouse_row_indices
+                ),
             )
             for row_index, row in enumerate(model.traversal.rows)
         )
@@ -574,12 +587,50 @@ class LayoutEngine:
                     )
                 )
 
+        branch_reference_placements = []
+        for occurrence in model.traversal.family_occurrences:
+            if (
+                occurrence.state is not FamilyTraversalState.ALREADY_DESCRIBED
+                or occurrence.spouse_row_index is None
+            ):
+                continue
+            descendant_placement = person_placements[occurrence.descendant_row_index]
+            spouse_placement = person_placements[occurrence.spouse_row_index]
+            descendant_start = descendant_placement.bar_x_start
+            descendant_end = descendant_placement.bar_x_end
+            spouse_start = spouse_placement.bar_x_start
+            spouse_end = spouse_placement.bar_x_end
+            x = None
+            if (
+                descendant_start is not None
+                and descendant_end is not None
+                and spouse_start is not None
+                and spouse_end is not None
+            ):
+                x = (
+                    min(descendant_start, spouse_start)
+                    + max(descendant_end, spouse_end)
+                ) / 2
+            visual_rank = spouse_placement.visual_rank + 1
+            branch_reference_placements.append(
+                BranchReferencePlacement(
+                    family_id=occurrence.family_id,
+                    descendant_row_index=occurrence.descendant_row_index,
+                    spouse_row_index=occurrence.spouse_row_index,
+                    referenced_row_index=occurrence.referenced_row_index,
+                    visual_rank=visual_rank,
+                    y=self.DEFAULT_TOP_MARGIN + visual_rank * self.DEFAULT_ROW_HEIGHT,
+                    x=x,
+                )
+            )
+
         return TimelineLayout(
             person_placements=person_placements,
             marriage_node_placements=tuple(marriage_node_placements),
             remarriage_segment_placements=tuple(remarriage_segment_placements),
             diagnostic_placements=tuple(diagnostic_placements),
             divorce_node_placements=tuple(divorce_node_placements),
+            branch_reference_placements=tuple(branch_reference_placements),
         )
 
     def _build_person_placement(
@@ -588,6 +639,7 @@ class LayoutEngine:
         scale: TimelineScale,
         row,
         row_index: int,
+        visual_rank: int,
     ) -> PersonPlacement:
         birth_target = TemporalTarget(
             owner_type=TemporalOwnerType.PERSON,
@@ -633,6 +685,7 @@ class LayoutEngine:
         return PersonPlacement(
             person_id=row.person_id,
             row_index=row_index,
+            visual_rank=visual_rank,
             generation=row.generation,
             role=row.role,
             family_id=row.family_id,
@@ -643,6 +696,6 @@ class LayoutEngine:
             x_end_kind=x_end_kind,
             y=(
                 self.DEFAULT_TOP_MARGIN
-                + row_index * self.DEFAULT_ROW_HEIGHT
+                + visual_rank * self.DEFAULT_ROW_HEIGHT
             ),
         )

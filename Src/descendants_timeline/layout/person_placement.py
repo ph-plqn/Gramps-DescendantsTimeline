@@ -24,6 +24,7 @@ class PersonPlacement:
     x_start: float | None
     x_end: float | None
     y: float
+    visual_rank: int | None = None
     x_start_kind: PositionKind = PositionKind.REPRESENTATIVE
     x_end_kind: PositionKind = PositionKind.REPRESENTATIVE
     life_bar_kind: LifeBarKind = LifeBarKind.NORMAL
@@ -47,6 +48,9 @@ class PersonPlacement:
         return self.x_end
 
     def __post_init__(self) -> None:
+        if self.visual_rank is None:
+            object.__setattr__(self, "visual_rank", self.row_index)
+
         if not isinstance(self.person_id, str) or not self.person_id:
             raise ValueError(
                 "person_id must be a non-empty string"

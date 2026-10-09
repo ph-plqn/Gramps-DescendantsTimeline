@@ -47,6 +47,560 @@ from descendants_timeline.traversal.descendance_traversal import (
 )
 
 class LayoutEngineTests(unittest.TestCase):
+    def test_already_described_family_reserves_visual_rank_after_spouse(self) -> None:
+        persons = {
+            person_id: Person(
+                person_id=person_id,
+                display_name=person_id,
+                gender=PersonGender.UNKNOWN,
+                event_refs=(),
+                parent_family_ids=(),
+                family_ids=("F1",) if person_id in ("I1", "I2") else (),
+            )
+            for person_id in ("I0", "I1", "I2", "I3")
+        }
+        family = Family(
+            family_id="F1",
+            parent1_id="I1",
+            parent2_id="I2",
+            event_refs=(),
+            child_refs=(),
+        )
+        data = RawGenealogyData(
+            persons=persons,
+            families={"F1": family},
+            events={},
+            root_person_id="I0",
+        )
+        traversal = TraversalResult(
+            root_person_id="I0",
+            rows=(
+                TraversalRow("I0", 1, TraversalRole.ROOT, None, None),
+                TraversalRow("I1", 2, TraversalRole.DESCENDANT, None, None),
+                TraversalRow("I2", 2, TraversalRole.SPOUSE, "F1", "I1"),
+                TraversalRow("I1", 2, TraversalRole.DESCENDANT, None, None),
+                TraversalRow("I2", 2, TraversalRole.SPOUSE, "F1", "I1"),
+                TraversalRow("I3", 2, TraversalRole.DESCENDANT, None, None),
+            ),
+            family_occurrences=(
+                TraversalFamilyOccurrence(
+                    family_id="F1",
+                    descendant_person_id="I1",
+                    descendant_row_index=1,
+                    spouse_person_id="I2",
+                    spouse_row_index=2,
+                    state=FamilyTraversalState.EXPLORED,
+                    referenced_row_index=None,
+                ),
+                TraversalFamilyOccurrence(
+                    family_id="F1",
+                    descendant_person_id="I1",
+                    descendant_row_index=3,
+                    spouse_person_id="I2",
+                    spouse_row_index=4,
+                    state=FamilyTraversalState.ALREADY_DESCRIBED,
+                    referenced_row_index=1,
+                ),
+            ),
+        )
+        model = TimelineModel(
+            data=data,
+            traversal=traversal,
+            temporal_results={},
+        )
+
+        layout = LayoutEngine().build(model)
+
+        self.assertEqual(
+            tuple(placement.row_index for placement in layout.person_placements),
+            tuple(range(len(traversal.rows))),
+        )
+        for placement in layout.person_placements[:5]:
+            self.assertEqual(placement.visual_rank, placement.row_index)
+        first_person_after_spouse = layout.person_placements[5]
+        self.assertEqual(
+            first_person_after_spouse.visual_rank,
+            first_person_after_spouse.row_index + 1,
+        )
+
+    def test_already_described_family_creates_branch_reference_placement(self) -> None:
+        from descendants_timeline.layout.branch_reference_placement import (
+            BranchReferencePlacement,
+        )
+
+        persons = {
+            person_id: Person(
+                person_id=person_id,
+                display_name=person_id,
+                gender=PersonGender.UNKNOWN,
+                event_refs=(),
+                parent_family_ids=(),
+                family_ids=("F1",) if person_id in ("I1", "I2") else (),
+            )
+            for person_id in ("I0", "I1", "I2", "I3")
+        }
+        family = Family(
+            family_id="F1",
+            parent1_id="I1",
+            parent2_id="I2",
+            event_refs=(),
+            child_refs=(),
+        )
+        data = RawGenealogyData(
+            persons=persons,
+            families={"F1": family},
+            events={},
+            root_person_id="I0",
+        )
+        traversal = TraversalResult(
+            root_person_id="I0",
+            rows=(
+                TraversalRow("I0", 1, TraversalRole.ROOT, None, None),
+                TraversalRow("I1", 2, TraversalRole.DESCENDANT, None, None),
+                TraversalRow("I2", 2, TraversalRole.SPOUSE, "F1", "I1"),
+                TraversalRow("I1", 2, TraversalRole.DESCENDANT, None, None),
+                TraversalRow("I2", 2, TraversalRole.SPOUSE, "F1", "I1"),
+                TraversalRow("I3", 2, TraversalRole.DESCENDANT, None, None),
+            ),
+            family_occurrences=(
+                TraversalFamilyOccurrence(
+                    family_id="F1",
+                    descendant_person_id="I1",
+                    descendant_row_index=1,
+                    spouse_person_id="I2",
+                    spouse_row_index=2,
+                    state=FamilyTraversalState.EXPLORED,
+                    referenced_row_index=None,
+                ),
+                TraversalFamilyOccurrence(
+                    family_id="F1",
+                    descendant_person_id="I1",
+                    descendant_row_index=3,
+                    spouse_person_id="I2",
+                    spouse_row_index=4,
+                    state=FamilyTraversalState.ALREADY_DESCRIBED,
+                    referenced_row_index=1,
+                ),
+            ),
+        )
+        model = TimelineModel(
+            data=data,
+            traversal=traversal,
+            temporal_results={},
+        )
+
+        layout = LayoutEngine().build(model)
+
+        self.assertEqual(len(layout.branch_reference_placements), 1)
+        reference = layout.branch_reference_placements[0]
+        self.assertIsInstance(reference, BranchReferencePlacement)
+        occurrence = traversal.family_occurrences[1]
+        self.assertEqual(reference.family_id, occurrence.family_id)
+        self.assertEqual(
+            reference.descendant_row_index, occurrence.descendant_row_index
+        )
+        self.assertEqual(reference.spouse_row_index, occurrence.spouse_row_index)
+        self.assertEqual(
+            reference.referenced_row_index, occurrence.referenced_row_index
+        )
+        spouse_placement = layout.person_placements[occurrence.spouse_row_index]
+        self.assertEqual(reference.visual_rank, spouse_placement.visual_rank + 1)
+        self.assertEqual(
+            reference.y,
+            LayoutEngine.DEFAULT_TOP_MARGIN
+            + reference.visual_rank * LayoutEngine.DEFAULT_ROW_HEIGHT,
+        )
+
+    def test_branch_reference_without_horizontal_bounds_keeps_x_none(self) -> None:
+        from descendants_timeline.layout.branch_reference_placement import (
+            BranchReferencePlacement,
+        )
+
+        persons = {
+            person_id: Person(
+                person_id=person_id,
+                display_name=person_id,
+                gender=PersonGender.UNKNOWN,
+                event_refs=(),
+                parent_family_ids=(),
+                family_ids=("F1",) if person_id in ("I1", "I2") else (),
+            )
+            for person_id in ("I0", "I1", "I2", "I3")
+        }
+        family = Family(
+            family_id="F1",
+            parent1_id="I1",
+            parent2_id="I2",
+            event_refs=(),
+            child_refs=(),
+        )
+        data = RawGenealogyData(
+            persons=persons,
+            families={"F1": family},
+            events={},
+            root_person_id="I0",
+        )
+        traversal = TraversalResult(
+            root_person_id="I0",
+            rows=(
+                TraversalRow("I0", 1, TraversalRole.ROOT, None, None),
+                TraversalRow("I1", 2, TraversalRole.DESCENDANT, None, None),
+                TraversalRow("I2", 2, TraversalRole.SPOUSE, "F1", "I1"),
+                TraversalRow("I1", 2, TraversalRole.DESCENDANT, None, None),
+                TraversalRow("I2", 2, TraversalRole.SPOUSE, "F1", "I1"),
+                TraversalRow("I3", 2, TraversalRole.DESCENDANT, None, None),
+            ),
+            family_occurrences=(
+                TraversalFamilyOccurrence(
+                    family_id="F1",
+                    descendant_person_id="I1",
+                    descendant_row_index=1,
+                    spouse_person_id="I2",
+                    spouse_row_index=2,
+                    state=FamilyTraversalState.EXPLORED,
+                    referenced_row_index=None,
+                ),
+                TraversalFamilyOccurrence(
+                    family_id="F1",
+                    descendant_person_id="I1",
+                    descendant_row_index=3,
+                    spouse_person_id="I2",
+                    spouse_row_index=4,
+                    state=FamilyTraversalState.ALREADY_DESCRIBED,
+                    referenced_row_index=1,
+                ),
+            ),
+        )
+        model = TimelineModel(
+            data=data,
+            traversal=traversal,
+            temporal_results={},
+        )
+
+        layout = LayoutEngine().build(model)
+
+        self.assertEqual(len(layout.branch_reference_placements), 1)
+        reference = layout.branch_reference_placements[0]
+        self.assertIsInstance(reference, BranchReferencePlacement)
+        occurrence = traversal.family_occurrences[1]
+        self.assertEqual(reference.family_id, occurrence.family_id)
+        self.assertEqual(
+            reference.descendant_row_index, occurrence.descendant_row_index
+        )
+        self.assertEqual(reference.spouse_row_index, occurrence.spouse_row_index)
+        self.assertEqual(
+            reference.referenced_row_index, occurrence.referenced_row_index
+        )
+        spouse_placement = layout.person_placements[occurrence.spouse_row_index]
+        self.assertEqual(reference.visual_rank, spouse_placement.visual_rank + 1)
+        self.assertEqual(
+            reference.y,
+            LayoutEngine.DEFAULT_TOP_MARGIN
+            + reference.visual_rank * LayoutEngine.DEFAULT_ROW_HEIGHT,
+        )
+        self.assertIsNone(reference.x)
+
+    def test_branch_reference_is_horizontally_centered_under_couple(self) -> None:
+        persons = {
+            person_id: Person(
+                person_id=person_id,
+                display_name=person_id,
+                gender=PersonGender.UNKNOWN,
+                event_refs=(
+                    PersonEventRef(
+                        event_id="E" + person_id,
+                        semantic_role=EventRoleSemantic.PRINCIPAL,
+                        source_role="PRIMARY",
+                    ),
+                ) if person_id in ("I1", "I2") else (),
+                parent_family_ids=(),
+                family_ids=("F1",) if person_id in ("I1", "I2") else (),
+            )
+            for person_id in ("I0", "I1", "I2", "I3")
+        }
+        family = Family(
+            family_id="F1",
+            parent1_id="I1",
+            parent2_id="I2",
+            event_refs=(),
+            child_refs=(),
+        )
+        events = {
+            "E" + person_id: Event(
+                event_id="E" + person_id,
+                source_type="BIRTH",
+                semantic=EventSemantic.BIRTH,
+                date=TemporalValue(
+                    source_value=str(birth_date),
+                    source_calendar="GREGORIAN",
+                    normalized_minimum=birth_date,
+                    normalized_maximum=birth_date,
+                    representative_value=birth_date,
+                    value_origin=ValueOrigin.GRAMPS,
+                    source_quality=SourceQuality.NORMAL,
+                    evidence_status=EvidenceStatus.EVIDENCE_USABLE,
+                    certainty=CertaintyLevel.CERTAIN,
+                ),
+            )
+            for person_id, birth_date in (
+                ("I1", date(1840, 1, 1)),
+                ("I2", date(1845, 1, 1)),
+            )
+        }
+        data = RawGenealogyData(
+            persons=persons,
+            families={"F1": family},
+            events=events,
+            root_person_id="I0",
+        )
+        traversal = TraversalResult(
+            root_person_id="I0",
+            rows=(
+                TraversalRow("I0", 1, TraversalRole.ROOT, None, None),
+                TraversalRow("I1", 2, TraversalRole.DESCENDANT, None, None),
+                TraversalRow("I2", 2, TraversalRole.SPOUSE, "F1", "I1"),
+                TraversalRow("I1", 2, TraversalRole.DESCENDANT, None, None),
+                TraversalRow("I2", 2, TraversalRole.SPOUSE, "F1", "I1"),
+                TraversalRow("I3", 2, TraversalRole.DESCENDANT, None, None),
+            ),
+            family_occurrences=(
+                TraversalFamilyOccurrence(
+                    family_id="F1",
+                    descendant_person_id="I1",
+                    descendant_row_index=1,
+                    spouse_person_id="I2",
+                    spouse_row_index=2,
+                    state=FamilyTraversalState.EXPLORED,
+                    referenced_row_index=None,
+                ),
+                TraversalFamilyOccurrence(
+                    family_id="F1",
+                    descendant_person_id="I1",
+                    descendant_row_index=3,
+                    spouse_person_id="I2",
+                    spouse_row_index=4,
+                    state=FamilyTraversalState.ALREADY_DESCRIBED,
+                    referenced_row_index=1,
+                ),
+            ),
+        )
+        model = TimelineModelBuilder().build(
+            data=data,
+            traversal=traversal,
+            temporal_results=TemporalInferenceEngine().run(data),
+        )
+
+        layout = LayoutEngine().build(model)
+
+        occurrence = traversal.family_occurrences[1]
+        reference = next(
+            reference
+            for reference in layout.branch_reference_placements
+            if reference.descendant_row_index == occurrence.descendant_row_index
+            and reference.spouse_row_index == occurrence.spouse_row_index
+        )
+        descendant = layout.person_placements[occurrence.descendant_row_index]
+        spouse = layout.person_placements[occurrence.spouse_row_index]
+        expected_x = (
+            min(descendant.bar_x_start, spouse.bar_x_start)
+            + max(descendant.bar_x_end, spouse.bar_x_end)
+        ) / 2
+        self.assertNotEqual(expected_x, 0.0)
+        self.assertEqual(reference.x, expected_x)
+
+    def test_multiple_already_described_families_create_distinct_branch_references(self) -> None:
+        from descendants_timeline.layout.branch_reference_placement import (
+            BranchReferencePlacement,
+        )
+
+        persons = {
+            person_id: Person(
+                person_id=person_id,
+                display_name=person_id,
+                gender=PersonGender.UNKNOWN,
+                event_refs=(),
+                parent_family_ids=(),
+                family_ids=("F1",) if person_id in ("I1", "I2") else (),
+            )
+            for person_id in ("I0", "I1", "I2", "I3")
+        }
+        family = Family(
+            family_id="F1",
+            parent1_id="I1",
+            parent2_id="I2",
+            event_refs=(),
+            child_refs=(),
+        )
+        data = RawGenealogyData(
+            persons=persons,
+            families={"F1": family},
+            events={},
+            root_person_id="I0",
+        )
+        traversal = TraversalResult(
+            root_person_id="I0",
+            rows=(
+                TraversalRow("I0", 1, TraversalRole.ROOT, None, None),
+                TraversalRow("I1", 2, TraversalRole.DESCENDANT, None, None),
+                TraversalRow("I2", 2, TraversalRole.SPOUSE, "F1", "I1"),
+                TraversalRow("I1", 2, TraversalRole.DESCENDANT, None, None),
+                TraversalRow("I2", 2, TraversalRole.SPOUSE, "F1", "I1"),
+                TraversalRow("I1", 2, TraversalRole.DESCENDANT, None, None),
+                TraversalRow("I2", 2, TraversalRole.SPOUSE, "F1", "I1"),
+                TraversalRow("I3", 2, TraversalRole.DESCENDANT, None, None),
+            ),
+            family_occurrences=(
+                TraversalFamilyOccurrence(
+                    family_id="F1",
+                    descendant_person_id="I1",
+                    descendant_row_index=1,
+                    spouse_person_id="I2",
+                    spouse_row_index=2,
+                    state=FamilyTraversalState.EXPLORED,
+                    referenced_row_index=None,
+                ),
+                TraversalFamilyOccurrence(
+                    family_id="F1",
+                    descendant_person_id="I1",
+                    descendant_row_index=3,
+                    spouse_person_id="I2",
+                    spouse_row_index=4,
+                    state=FamilyTraversalState.ALREADY_DESCRIBED,
+                    referenced_row_index=1,
+                ),
+                TraversalFamilyOccurrence(
+                    family_id="F1",
+                    descendant_person_id="I1",
+                    descendant_row_index=5,
+                    spouse_person_id="I2",
+                    spouse_row_index=6,
+                    state=FamilyTraversalState.ALREADY_DESCRIBED,
+                    referenced_row_index=1,
+                ),
+            ),
+        )
+        model = TimelineModel(
+            data=data,
+            traversal=traversal,
+            temporal_results={},
+        )
+
+        layout = LayoutEngine().build(model)
+
+        self.assertEqual(len(layout.branch_reference_placements), 2)
+        self.assertEqual(
+            tuple(
+                reference.spouse_row_index
+                for reference in layout.branch_reference_placements
+            ),
+            (4, 6),
+        )
+        for reference, occurrence in zip(
+            layout.branch_reference_placements, traversal.family_occurrences[1:]
+        ):
+            self.assertIsInstance(reference, BranchReferencePlacement)
+            self.assertEqual(reference.family_id, occurrence.family_id)
+            self.assertEqual(
+                reference.descendant_row_index, occurrence.descendant_row_index
+            )
+            self.assertEqual(reference.spouse_row_index, occurrence.spouse_row_index)
+            self.assertEqual(
+                reference.referenced_row_index, occurrence.referenced_row_index
+            )
+            spouse = layout.person_placements[occurrence.spouse_row_index]
+            self.assertEqual(reference.visual_rank, spouse.visual_rank + 1)
+            self.assertEqual(
+                reference.y,
+                LayoutEngine.DEFAULT_TOP_MARGIN
+                + reference.visual_rank * LayoutEngine.DEFAULT_ROW_HEIGHT,
+            )
+        person_after_references = layout.person_placements[7]
+        self.assertEqual(person_after_references.person_id, "I3")
+        self.assertEqual(person_after_references.row_index, 7)
+        self.assertEqual(
+            person_after_references.visual_rank, person_after_references.row_index + 2
+        )
+
+    def test_person_y_uses_visual_rank_after_already_described_family(self) -> None:
+        persons = {
+            person_id: Person(
+                person_id=person_id,
+                display_name=person_id,
+                gender=PersonGender.UNKNOWN,
+                event_refs=(),
+                parent_family_ids=(),
+                family_ids=("F1",) if person_id in ("I1", "I2") else (),
+            )
+            for person_id in ("I0", "I1", "I2", "I3")
+        }
+        family = Family(
+            family_id="F1",
+            parent1_id="I1",
+            parent2_id="I2",
+            event_refs=(),
+            child_refs=(),
+        )
+        data = RawGenealogyData(
+            persons=persons,
+            families={"F1": family},
+            events={},
+            root_person_id="I0",
+        )
+        traversal = TraversalResult(
+            root_person_id="I0",
+            rows=(
+                TraversalRow("I0", 1, TraversalRole.ROOT, None, None),
+                TraversalRow("I1", 2, TraversalRole.DESCENDANT, None, None),
+                TraversalRow("I2", 2, TraversalRole.SPOUSE, "F1", "I1"),
+                TraversalRow("I1", 2, TraversalRole.DESCENDANT, None, None),
+                TraversalRow("I2", 2, TraversalRole.SPOUSE, "F1", "I1"),
+                TraversalRow("I3", 2, TraversalRole.DESCENDANT, None, None),
+            ),
+            family_occurrences=(
+                TraversalFamilyOccurrence(
+                    family_id="F1",
+                    descendant_person_id="I1",
+                    descendant_row_index=1,
+                    spouse_person_id="I2",
+                    spouse_row_index=2,
+                    state=FamilyTraversalState.EXPLORED,
+                    referenced_row_index=None,
+                ),
+                TraversalFamilyOccurrence(
+                    family_id="F1",
+                    descendant_person_id="I1",
+                    descendant_row_index=3,
+                    spouse_person_id="I2",
+                    spouse_row_index=4,
+                    state=FamilyTraversalState.ALREADY_DESCRIBED,
+                    referenced_row_index=1,
+                ),
+            ),
+        )
+        model = TimelineModel(
+            data=data,
+            traversal=traversal,
+            temporal_results={},
+        )
+
+        layout = LayoutEngine().build(model)
+
+        placement = layout.person_placements[5]
+        self.assertEqual(placement.visual_rank, placement.row_index + 1)
+        self.assertEqual(
+            placement.y,
+            LayoutEngine.DEFAULT_TOP_MARGIN
+            + placement.visual_rank * LayoutEngine.DEFAULT_ROW_HEIGHT,
+        )
+        self.assertEqual(
+            placement.y
+            - (
+                LayoutEngine.DEFAULT_TOP_MARGIN
+                + placement.row_index * LayoutEngine.DEFAULT_ROW_HEIGHT
+            ),
+            LayoutEngine.DEFAULT_ROW_HEIGHT,
+        )
+
     def test_root_produces_one_person_placement(self) -> None:
         root = Person(
             person_id="I1",

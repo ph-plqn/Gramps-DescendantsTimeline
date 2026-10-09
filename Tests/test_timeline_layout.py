@@ -9,6 +9,28 @@ from descendants_timeline.layout.timeline_layout import TimelineLayout
 
 
 class TimelineLayoutTests(unittest.TestCase):
+    def test_timeline_layout_stores_branch_reference_placements(self) -> None:
+        from descendants_timeline.layout.branch_reference_placement import (
+            BranchReferencePlacement,
+        )
+
+        reference = BranchReferencePlacement(
+            family_id="F1",
+            descendant_row_index=3,
+            spouse_row_index=4,
+            referenced_row_index=1,
+            visual_rank=5,
+            y=170.0,
+        )
+        layout = TimelineLayout(
+            person_placements=(),
+            marriage_node_placements=(),
+            remarriage_segment_placements=(),
+            branch_reference_placements=(reference,),
+        )
+
+        self.assertEqual(layout.branch_reference_placements, (reference,))
+
     def test_empty_timeline_layout_can_be_created(self) -> None:
         layout = TimelineLayout(
             person_placements=(),

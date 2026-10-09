@@ -31,6 +31,39 @@ class PersonPlacementTests(unittest.TestCase):
         self.assertIsNone(placement.x_start)
         self.assertIsNone(placement.x_end)
         self.assertEqual(placement.y, 10.0)
+
+    def test_visual_rank_defaults_to_row_index(self) -> None:
+        placement = PersonPlacement(
+            person_id="I1",
+            row_index=3,
+            generation=1,
+            role=TraversalRole.ROOT,
+            family_id=None,
+            spouse_of_person_id=None,
+            x_start=None,
+            x_end=None,
+            y=10.0,
+        )
+
+        self.assertEqual(placement.visual_rank, placement.row_index)
+
+    def test_visual_rank_can_differ_from_row_index(self) -> None:
+        placement = PersonPlacement(
+            person_id="I1",
+            row_index=5,
+            generation=1,
+            role=TraversalRole.ROOT,
+            family_id=None,
+            spouse_of_person_id=None,
+            x_start=None,
+            x_end=None,
+            y=10.0,
+            visual_rank=7,
+        )
+
+        self.assertEqual(placement.row_index, 5)
+        self.assertEqual(placement.visual_rank, 7)
+
     def test_x_start_kind_can_be_representative(self) -> None:
         from descendants_timeline.layout.person_placement import PositionKind
 
